@@ -15,18 +15,64 @@ cfg = AppConfig()
 cfg.validate()
 db = DB(cfg.db_path)
 
+# ---------- Auth (local) ----------
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = None
+
+
+def show_auth():
+    st.title("Connexion — CanaR")
+    tab_login, tab_signup = st.tabs(["Se connecter", "Créer un compte"])
+
+    with tab_login:
+        u = st.text_input("IDEP", key="login_u")
+        p = st.text_input("Mot de passe", type="password", key="login_p")
+        if st.button("Connexion"):
+            uid = db.verify_user(u, p)
+            if uid is None:
+                st.error("Identifiants invalides")
+            else:
+                st.session_state["user_id"] = uid
+                # Create a starter conversation if none
+                if not db.list_conversations(uid):
+                    cid = db.create_conversation(uid, "Nouvelle conversation", "r_helpdesk")
+                    st.session_state["conv_id"] = cid
+                    st.session_state["agent"] = "r_helpdesk"
+                st.rerun()
+
+    with tab_signup:
+        u2 = st.text_input("Nom d’utilisateur", key="signup_u")
+        p2 = st.text_input("Mot de passe", type="password", key="signup_p")
+        if st.button("Créer le compte"):
+            try:
+                uid = db.create_user(u2, p2)
+                st.success("Compte créé. Connectez-vous.")
+            except Exception as e:
+                st.error(str(e))
+
+
+if not st.session_state["user_id"]:
+    show_auth()
+    st.stop()
+
+USER_ID = st.session_state["user_id"]
+
 # Session defaults
 if "conv_id" not in st.session_state:
-    # create a starter conversation
-    cid = db.create_conversation("Nouvelle conversation", "r_helpdesk")
-    st.session_state["conv_id"] = cid
-    st.session_state["agent"] = "r_helpdesk"
+    convs = db.list_conversations(USER_ID)
+    if convs:
+        st.session_state["conv_id"] = convs[0].id
+        st.session_state["agent"] = convs[0].agent
+    else:
+        cid = db.create_conversation(USER_ID, "Nouvelle conversation", "r_helpdesk")
+        st.session_state["conv_id"] = cid
+        st.session_state["agent"] = "r_helpdesk"
 
 conv_id: int = st.session_state["conv_id"]
 agent: str = st.session_state.get("agent", "r_helpdesk")
 
 # Sidebar (conversations + create/rename/delete)
-sidebar(db, conv_id, ["r_helpdesk", "sas_to_r"], agent)
+sidebar(db, USER_ID, conv_id, ["r_helpdesk", "sas_to_r"], agent)
 
 # ---------- Header with current conversation name + agent selector ----------
 AGENT_LABELS = {"r_helpdesk": "Assistant R", "sas_to_r": "Traduction SAS → R"}
@@ -34,6 +80,10 @@ ordered_agents = ["r_helpdesk", "sas_to_r"]
 
 conv = db.get_conversation(conv_id)
 conv_title = conv.title if conv else "Nouvelle conversation"
+
+# Fetch current user
+user = db.get_user(USER_ID)
+username = user.username if user else "?"
 
 header_left, header_right = st.columns([1.8, 1], vertical_alignment="center")
 with header_left:
@@ -56,6 +106,16 @@ with header_right:
     if picked_agent != agent:
         st.session_state["agent"] = picked_agent
         st.rerun()
+
+    # User chip + logout
+    ucol, lcol = st.columns([0.65, 0.35])
+    with ucol:
+        st.markdown(f"<div class='user-chip'>👤 {username}</div>", unsafe_allow_html=True)
+    with lcol:
+        if st.button("Déconnexion", use_container_width=True):
+            for k in ("user_id", "conv_id", "agent"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
 # ---------- Controls (right) ----------
 ctrl_left, ctrl_right = st.columns([2, 1])
@@ -102,6 +162,21 @@ st.markdown(
       }
       /* tighten spacing under header */
       div[data-baseweb="select"] { margin-top: .25rem; }
+
+
+      .canar-header { display:flex; align-items:baseline; gap:.4rem; flex-wrap:nowrap; }
+      .canar-header .app-title { font-size:1.25rem; font-weight:700; line-height:1.3; }
+      .canar-header .sep { color:rgba(0,0,0,.55); }
+      .canar-header .conv-title {
+        font-size:1.0rem; font-style:italic; color:rgba(0,0,0,.6);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0;
+      }
+      .user-chip {
+        display:inline-flex; align-items:center; gap:.4rem;
+        padding:.2rem .6rem; border:1px solid rgba(0,0,0,.15);
+        border-radius:999px; font-size:.85rem; white-space:nowrap;
+        background:rgba(0,0,0,.04);
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -112,7 +187,7 @@ chat = ChatClient(cfg.mistral_base, cfg.mistral_key, cfg.mistral_model)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 
 # Show messages
-render_messages(db, conv_id)
+render_messages(db, USER_ID, conv_id)
 
 # --- Input area + turn handling ---
 sas_code_uploaded = None
@@ -128,13 +203,13 @@ if user_input:
         st.markdown(user_input)
 
     # 2) persist it
-    db.add_message(conv_id, "user", user_input)
+    db.add_message(USER_ID, conv_id, "user", user_input)
 
     # 3) agent-specific logic
     if st.session_state["agent"] == "sas_to_r":
         messages = sas_to_r.build_messages(user_input, sas_code_uploaded)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-        _ = stream_answer(db, conv_id, gen)
+        _ = stream_answer(db, USER_ID, conv_id, gen)
 
     else:  # r_helpdesk
         qvec = embed.embed_query(user_input)
@@ -144,7 +219,7 @@ if user_input:
         )
         messages, src_list = r_helpdesk.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-        answer = stream_answer(db, conv_id, gen)
+        answer = stream_answer(db, USER_ID, conv_id, gen)
 
         # Citations panel
         with st.expander("Sources"):
@@ -153,7 +228,7 @@ if user_input:
 
 # Footer / export for SAS→R
 if st.session_state["agent"] == "sas_to_r":
-    msgs = db.get_messages(conv_id)
+    msgs = db.get_messages(USER_ID, conv_id)
     if msgs and msgs[-1].role == "assistant":
         if st.button("Exporter la dernière réponse en .R"):
             content = msgs[-1].content

@@ -8,7 +8,9 @@ AGENT_LABELS = {
     "sas_to_r": "Traduction SAS → R",
 }
 
-def sidebar(db: DB, current_conv_id: Optional[int], agent_options: list[str], current_agent: str):
+
+def sidebar(db: DB, user_id: int, current_conv_id: Optional[int],
+            agent_options: list[str], current_agent: str):
     st.sidebar.header("Conversations")
 
     # Create new (compact)
@@ -19,7 +21,7 @@ def sidebar(db: DB, current_conv_id: Optional[int], agent_options: list[str], cu
         picked_label = st.selectbox("Agent", labels, index=idx, key="new_agent_label")
         agent = agent_options[labels.index(picked_label)]
         if st.button("Créer", use_container_width=True, key="create_conv"):
-            cid = db.create_conversation(default_title, agent)
+            cid = db.create_conversation(user_id, default_title, agent)
             st.session_state["conv_id"] = cid
             st.session_state["agent"] = agent
             st.rerun()
@@ -27,7 +29,7 @@ def sidebar(db: DB, current_conv_id: Optional[int], agent_options: list[str], cu
     st.sidebar.markdown("---")
 
     # Conversation list
-    convs = db.list_conversations()
+    convs = db.list_conversations(user_id)
     for c in convs:
         block = st.sidebar.container()
 
@@ -45,9 +47,10 @@ def sidebar(db: DB, current_conv_id: Optional[int], agent_options: list[str], cu
             new_name = st.text_input("Renommer", value=c.title, key=f"rn_{c.id}")
             a, b = st.columns(2)
             if a.button("📝 Renommer", key=f"do_rn_{c.id}"):
-                db.rename_conversation(c.id, new_name); st.rerun()
+                db.rename_conversation(user_id, c.id, new_name)
+                st.rerun()
             if b.button("🗑️ Supprimer", key=f"do_del_{c.id}"):
-                db.delete_conversation(c.id)
+                db.delete_conversation(user_id, c.id)
                 if current_conv_id == c.id:
                     st.session_state.pop("conv_id", None)
                 st.rerun()
