@@ -1,0 +1,31 @@
+[project]
+name = "canar"
+version = "0.4.0"
+requires-python = ">=3.10"
+description = "Web chatbots for R users (Insee)"
+readme = "README.md"
+
+dependencies = [
+  "streamlit>=1.35",
+  "python-dotenv>=1.0.1",
+  "openai>=1.40.0",
+  "qdrant-client>=1.9.0",
+  "sqlmodel>=0.0.21",
+  "pydantic>=2.7",
+  "numpy>=1.26",
+  "requests>=2.31",
+  "psycopg[binary]>=3.1",
+  "bcrypt>=4.1",
+]
+
+[project.scripts]
+# Launch Streamlit app with: `canar`
+canar = "canar.launch:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Package the launcher (`canar`)
+include = ["canar*"]

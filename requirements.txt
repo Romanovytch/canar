@@ -7,4 +7,4 @@ pydantic>=2.7
 numpy>=1.26
 requests>=2.31
 psycopg[binary]>=3.1
-passlib[bcrypt]>=1.7
+bcrypt>=4.1

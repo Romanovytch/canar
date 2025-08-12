@@ -3,7 +3,7 @@ import os
 import datetime as dt
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Session, create_engine, select, delete
-from passlib.hash import bcrypt
+import bcrypt
 
 
 # ---------- Models ----------
@@ -50,7 +50,9 @@ class DB:
             existing = s.exec(select(User).where(User.username == username)).first()
             if existing:
                 raise ValueError("Nom d’utilisateur déjà pris.")
-            u = User(username=username, password_hash=bcrypt.hash(password))
+            pw_hash = bcrypt.hashpw(password.encode("utf-8"),
+                                    bcrypt.gensalt(rounds=12)).decode("utf-8")
+            u = User(username=username, password_hash=pw_hash)
             s.add(u)
             s.commit()
             s.refresh(u)
@@ -59,9 +61,10 @@ class DB:
     def verify_user(self, username: str, password: str) -> Optional[int]:
         with Session(self.engine) as s:
             u = s.exec(select(User).where(User.username == username)).first()
-            if not u or not bcrypt.verify(password, u.password_hash):
+            if not u:
                 return None
-            return u.id
+            ok = bcrypt.checkpw(password.encode("utf-8"), u.password_hash.encode("utf-8"))
+            return u.id if ok else None
 
     def get_user(self, user_id: int) -> Optional[User]:
         with Session(self.engine) as s:

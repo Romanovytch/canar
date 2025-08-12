@@ -1,13 +1,13 @@
 from __future__ import annotations
 import streamlit as st
-from app.config import AppConfig
-from app.state import DB
-from app.api.llm_client import ChatClient
-from app.api.embed_client import EmbedClient
-from app.api.retrieval import search_qdrant
-from app.agents import sas_to_r, r_helpdesk
-from app.ui.sidebar import sidebar
-from app.ui.chat import render_messages, stream_answer
+from canar.app.config import AppConfig
+from canar.app.state import DB
+from canar.app.api.llm_client import ChatClient
+from canar.app.api.embed_client import EmbedClient
+from canar.app.api.retrieval import search_qdrant
+from canar.app.agents import sas_to_r, r_helpdesk
+from canar.app.ui.sidebar import sidebar
+from canar.app.ui.chat import render_messages, stream_answer
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -99,14 +99,6 @@ with header_left:
     )
 
 with header_right:
-    labels = [AGENT_LABELS[a] for a in ordered_agents]
-    idx = ordered_agents.index(agent) if agent in ordered_agents else 0
-    picked_label = st.selectbox("Agent", labels, index=idx)
-    picked_agent = ordered_agents[labels.index(picked_label)]
-    if picked_agent != agent:
-        st.session_state["agent"] = picked_agent
-        st.rerun()
-
     # User chip + logout
     ucol, lcol = st.columns([0.65, 0.35])
     with ucol:
@@ -116,6 +108,16 @@ with header_right:
             for k in ("user_id", "conv_id", "agent"):
                 st.session_state.pop(k, None)
             st.rerun()
+
+    # Agent selector
+    labels = [AGENT_LABELS[a] for a in ordered_agents]
+    idx = ordered_agents.index(agent) if agent in ordered_agents else 0
+    picked_label = st.selectbox("Agent", labels, index=idx)
+    picked_agent = ordered_agents[labels.index(picked_label)]
+    if picked_agent != agent:
+        st.session_state["agent"] = picked_agent
+        st.rerun()
+
 
 # ---------- Controls (right) ----------
 ctrl_left, ctrl_right = st.columns([2, 1])
