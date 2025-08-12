@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import datetime as dt
 from typing import Optional
-from sqlmodel import SQLModel, Field, Session, create_engine, select
+from sqlmodel import SQLModel, Field, Session, create_engine, select, delete
 
 
 class Conversation(SQLModel, table=True):
@@ -51,8 +51,8 @@ class DB:
 
     def delete_conversation(self, conv_id: int):
         with Session(self.engine) as s:
-            s.exec(f"DELETE FROM message WHERE conversation_id={conv_id}")
-            s.exec(f"DELETE FROM conversation WHERE id={conv_id}")
+            s.exec(delete(Message).where(Message.conversation_id == conv_id))
+            s.exec(delete(Conversation).where(Conversation.id == conv_id))
             s.commit()
 
     def add_message(self, conv_id: int, role: str, content: str) -> int:
@@ -71,3 +71,7 @@ class DB:
         with Session(self.engine) as s:
             return list(s.exec(select(Message).where(
                 Message.conversation_id == conv_id).order_by(Message.id)))
+    
+    def get_conversation(self, conv_id: int) -> Optional[Conversation]:
+        with Session(self.engine) as s:
+            return s.get(Conversation, conv_id)
