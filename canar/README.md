@@ -28,17 +28,17 @@ You can either add the environment variables manually or add them in a `.env` fi
 ```
 # LLM (Mistral 24B) — OpenAI-compatible
 MISTRAL_API_BASE="https://url_mistral_model/v1"
-MISTRAL_API_KEY="sk-zrfQ74niMWT3BlbkpDisoUkvOYBueNXEAn_zrfQ74niMWT3BlbkFJwbcgknW"
+MISTRAL_API_KEY="apikeyhere"
 MISTRAL_MODEL="mistralai/Mistral-Small-24B-Instruct-2501" # for instance
 
 # Embeddings (Gemma2 multilingual) — OpenAI-compatible
 EMBED_API_BASE="https://url_embedding_model/v1"
-EMBED_API_KEY="sk-3BlbkFJwbcgknWzrfQ74niMWT3BlbkpDisoUkvOYBueNXcgknW"
+EMBED_API_KEY="apikeyhere"
 EMBED_MODEL="BAAI/bge-multilingual-gemma2" # for instance
 
 # Qdrant
 QDRANT_URL="http://qdrant:6333"
-QDRANT_API_KEY="sk-lbkpDisoUkvby64561r4b8zgh"
+QDRANT_API_KEY="apikeyhere"
 # comma-separated list of collections (first is default current)
 QDRANT_COLLECTIONS=collection1_v1, collection2_v1, collection3_v2
 
