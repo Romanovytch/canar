@@ -14,7 +14,7 @@ source .venv/bin/activate
 
 ## Download dependencies
 
-RAGnaR has a `requirements.txt` listing all the dependencies and their minimal versions and a `pyproject.toml` as well:
+CanaR has a `requirements.txt` listing all the dependencies and their minimal versions and a `pyproject.toml` as well:
 
 ```shell
 pip install -U pip

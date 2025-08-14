@@ -14,7 +14,7 @@ source .venv/bin/activate
 
 ## Installer les dépendances
 
-RAGnaR a un `requirements.txt` listant toutes les dépendances et leur version minimale ainsi qu'un `pyproject.toml` :
+CanaR a un `requirements.txt` listant toutes les dépendances et leur version minimale ainsi qu'un `pyproject.toml` :
 
 ```shell
 pip install -U pip
