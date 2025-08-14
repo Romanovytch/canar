@@ -1,3 +1,5 @@
+[🇫🇷 Français](README.fr.md) | [🇬🇧 English](README.md)
+
 # How to use CanaR
 
 ## Virtual env setup
@@ -23,7 +25,8 @@ Depending on your machine and network, it can take some time.
 
 ## Environement variables
 
-You can either add the environment variables manually or add them in a `.env` file at the root of the project.
+You can setup environment variables in a `.env` file at the root of the project.
+The `.env.example` file gives you an example of what it could look like :
 
 ```
 # LLM (Mistral 24B) — OpenAI-compatible
@@ -46,6 +49,7 @@ QDRANT_COLLECTIONS=collection1_v1, collection2_v1, collection3_v2
 DB_POSTGRES_URL=postgresql+psycopg://user-name:password@base-url:5432/canar
 ```
 
+
 ## Usage
 
 To launch the app:
@@ -53,3 +57,4 @@ To launch the app:
 ```
 canar
 ```
+
