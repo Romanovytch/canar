@@ -5,7 +5,7 @@ from canar.app.state import DB
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.retrieval import search_qdrant
-from canar.app.agents import sas_to_r, r_helpdesk
+from canar.app.agents import sas_to_r, r_helpdesk, assistant_gene
 from canar.app.ui.sidebar import sidebar
 from canar.app.ui.chat import render_messages, stream_answer
 
@@ -72,11 +72,11 @@ conv_id: int = st.session_state["conv_id"]
 agent: str = st.session_state.get("agent", "r_helpdesk")
 
 # Sidebar (conversations + create/rename/delete)
-sidebar(db, USER_ID, conv_id, ["r_helpdesk", "sas_to_r"], agent)
+sidebar(db, USER_ID, conv_id, ["r_helpdesk", "sas_to_r", "assistant_gene"], agent)
 
 # ---------- Header with current conversation name + agent selector ----------
-AGENT_LABELS = {"r_helpdesk": "Assistant R", "sas_to_r": "Traduction SAS → R"}
-ordered_agents = ["r_helpdesk", "sas_to_r"]
+AGENT_LABELS = {"r_helpdesk": "Assistant R", "sas_to_r": "Traduction SAS → R", "assistant_gene": "Assistant Génération"}
+ordered_agents = ["r_helpdesk", "sas_to_r", "assistant_gene"]
 
 conv = db.get_conversation(conv_id)
 conv_title = conv.title if conv else "Nouvelle conversation"
@@ -212,6 +212,16 @@ if user_input:
         messages = sas_to_r.build_messages(user_input, sas_code_uploaded)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
         _ = stream_answer(db, USER_ID, conv_id, gen)
+
+    elif st.session_state["agent"] == "assistant_gene":
+        qvec = embed.embed_query(user_input)
+        citations = search_qdrant(
+            cfg.qdrant_url, cfg.qdrant_api_key, list(cfg.qdrant_collections),
+            qvec, top_k_per_collection=10, source_filter=None
+        )
+        messages, src_list = assistant_gene.build_messages(user_input, citations)
+        gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
+        answer = stream_answer(db, USER_ID, conv_id, gen)
 
     else:  # r_helpdesk
         qvec = embed.embed_query(user_input)

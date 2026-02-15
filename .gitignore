@@ -1,5 +1,25 @@
+# MkDocs
+site/
+
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.build/
+dist/
+build/
+
+# Envs & tooling
 .venv/
+venv/
 .env
-data/
-*.egg-info
+.mypy_cache/
+.pytest_cache/
+sources.yaml
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store

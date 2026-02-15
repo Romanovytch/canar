@@ -6,7 +6,7 @@ from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 
 def search_qdrant(qdrant_url: str, api_key: str | None, collections: list[str],
                   query_vector: list[float], top_k_per_collection: int = 5,
-                  source_filter: str | None = "utilitr") -> list[Dict[str, Any]]:
+                  source_filter: str | None = "dico_var_g21") -> list[Dict[str, Any]]:
     """
     Returns a unified list of hits across collections with normalized per-collection score.
     """
@@ -16,9 +16,10 @@ def search_qdrant(qdrant_url: str, api_key: str | None, collections: list[str],
         flt = None
         if source_filter:
             flt = Filter(must=[FieldCondition(key="source", match=MatchValue(value=source_filter))])
-        hits = client.search(collection_name=col, query_vector=query_vector,
-                             limit=top_k_per_collection,
-                             with_payload=True, with_vectors=False, query_filter=flt)
+        res = client.query_points(collection_name=col, query=query_vector,
+                                    limit=top_k_per_collection,
+                                    with_payload=True, query_filter=flt)
+        hits = res.points
         if not hits:
             continue
         # min-max normalize within the collection to make cross-collection fusion saner

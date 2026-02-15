@@ -6,6 +6,7 @@ from ..state import DB
 AGENT_LABELS = {
     "r_helpdesk": "Assistant R",
     "sas_to_r": "Traduction SAS → R",
+    "assistant_gene": "Assistant Génération"
 }
 
 
