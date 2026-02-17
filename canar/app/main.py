@@ -35,9 +35,9 @@ def show_auth():
                 st.session_state["user_id"] = uid
                 # Create a starter conversation if none
                 if not db.list_conversations(uid):
-                    cid = db.create_conversation(uid, "Nouvelle conversation", "r_helpdesk")
+                    cid = db.create_conversation(uid, "Nouvelle conversation", "assistant_gene")
                     st.session_state["conv_id"] = cid
-                    st.session_state["agent"] = "r_helpdesk"
+                    st.session_state["agent"] = "assistant_gene"
                 st.rerun()
 
     with tab_signup:
@@ -64,12 +64,12 @@ if "conv_id" not in st.session_state:
         st.session_state["conv_id"] = convs[0].id
         st.session_state["agent"] = convs[0].agent
     else:
-        cid = db.create_conversation(USER_ID, "Nouvelle conversation", "r_helpdesk")
+        cid = db.create_conversation(USER_ID, "Nouvelle conversation", "assistant_gene")
         st.session_state["conv_id"] = cid
-        st.session_state["agent"] = "r_helpdesk"
+        st.session_state["agent"] = "assistant_gene"
 
 conv_id: int = st.session_state["conv_id"]
-agent: str = st.session_state.get("agent", "r_helpdesk")
+agent: str = st.session_state.get("agent", "assistant_gene")
 
 # Sidebar (conversations + create/rename/delete)
 sidebar(db, USER_ID, conv_id, ["r_helpdesk", "sas_to_r", "assistant_gene"], agent)
@@ -90,7 +90,7 @@ with header_left:
     st.markdown(
         f"""
         <div class="canar-header">
-          <span class="app-title">🦆 CanaR — Insee</span>
+          <span class="app-title">🦆 CanaR — Céreq</span>
           <span class="sep">|</span>
           <span class="conv-title" title="{conv_title}">{conv_title}</span>
         </div>
