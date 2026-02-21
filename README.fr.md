@@ -1,59 +1,123 @@
 [🇫🇷 Français](README.fr.md) | [🇬🇧 English](README.md)
 
-# Comment utiliser CanaR ?
+# CanaR
 
-## Initialisation de l'environnement virtuel
+CanaR est une application de chat qui permet de créer et d’exposer des **chatbots RAG** (Retrieval-Augmented Generation) basés sur des **LLM**. Elle fournit une **interface web** pour converser avec des assistants capables de s’appuyer sur une **base documentaire** (ex. documentation interne, documents RH ou juridiques, publications, code, …) préalablement ingérée dans **Qdrant** — typiquement via l’outil d’ingestion **AgoRa**.
 
-(Optionnel) C'est une bonne pratique, en python, d'utiliser un environnement virtuel :
+CanaR permet de :
+- :left_speech_bubble: **Accéder à une interface de chat** avec gestion de comptes utilisateurs
+- :robot: **Définir plusieurs chatbots/assistants**, chacun avec une prompt et un comportement adaptés à des tâches spécifiques
+- :mag_right: **Enrichir les réponses par la recherche documentaire** (RAG) et **citer les sources** utilisées
+- :page_facing_up: **Conserver l’historique** des conversations (sessions et messages)
+
+Pour plus d’informations sur l’installation, les fonctionnalités et la contribution, consultez la **documentation** : [Documentation CanaR](https://www.google.com/).
+
+---
+
+## Démarrage rapide (local)
+
+### 1) Démarrer Qdrant + Postgres (Docker Compose)
 
 ```shell
-cd CanaR
-python -m venv .venv
-source .venv/bin/activate
+cd infra
+docker compose up -d
+docker compose ps
 ```
 
-## Installer les dépendances
+L’UI Qdrant est accessible sur `http://localhost:6333/dashboard`.
 
-CanaR a un `requirements.txt` listant toutes les dépendances et leur version minimale ainsi qu'un `pyproject.toml` :
+### 2) Configurer les variables d’environnement
+
+Crée un fichier `.env` à la racine du projet à partir de `.env.example`.
+> :warning: Important : la valeur de `QDRANT_URL` et `DB_POSTGRES_URL` dépend de **l’endroit où tourne CanaR** :
+- CanaR lancé sur l’hôte (venv / canar / streamlit run) → utiliser `localhost`
+- CanaR lancé dans Docker (service canar dans un compose) → utiliser les noms de service Docker : `qdrant`, `postgres`
+
+| Variable             | Description                                    | Exemple                                                                                            |
+| -------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `LLM_API_BASE`       | URL de l’API du LLM                            | `https://api.mistral.ai/v1`                                                                        |
+| `LLM_API_KEY`        | Clé API du LLM                                 | `sk-...`                                                                                           |
+| `LLM_MODEL`          | Nom du modèle                                  | `mistral-medium`                                                                                   |
+| `EMBED_API_BASE`     | URL de l’API embeddings                        | `https://api.mistral.ai/v1`                                                                        |
+| `EMBED_API_KEY`      | Clé API embeddings                             | `sk-...`                                                                                           |
+| `EMBED_MODEL`        | Nom du modèle d’embeddings                     | `mistral-embed`                                                                                    |
+| `QDRANT_URL`         | URL de Qdrant                                  | `http://localhost:6333` (host) ou `http://qdrant:6333` (docker)                                    |
+| `QDRANT_API_KEY`     | Clé API Qdrant (si activée)                    | `...`                                                                                              |
+| `QDRANT_COLLECTIONS` | Collections autorisées (séparées par virgules) | `col1,col2`                                                                                        |
+| `DB_POSTGRES_URL`    | URL Postgres (SQLAlchemy/psycopg)              | `postgresql+psycopg://canar:canar@localhost:5432/canar` (host) ou `...@postgres:5432/...` (docker) |
+
+### 3) Installer et lancer CanaR
 
 ```shell
+python -m venv .venv
+source .venv/bin/activate
+
 pip install -U pip
 pip install -e .
 ```
 
-Selon votre machine et votre réseau, cette opération peut prendre quelques minutes.
-
-## Variables d'environnement
-
-Vous pouvez spécifier les variables d'environnement dans un fichier `.env` à la racine du projet.
-Le fichier `.env.example` vous donne un exemple de ce à quoi il devrait ressembler :
-
-```
-# LLM (Mistral 24B) — OpenAI-compatible
-MISTRAL_API_BASE="https://url_mistral_model/v1"
-MISTRAL_API_KEY="apikeyhere"
-MISTRAL_MODEL="mistralai/Mistral-Small-24B-Instruct-2501" # for instance
-
-# Embeddings (Gemma2 multilingual) — OpenAI-compatible
-EMBED_API_BASE="https://url_embedding_model/v1"
-EMBED_API_KEY="apikeyhere"
-EMBED_MODEL="BAAI/bge-multilingual-gemma2" # for instance
-
-# Qdrant
-QDRANT_URL="http://qdrant:6333"
-QDRANT_API_KEY="apikeyhere"
-# liste des collections, séparées par des virgules
-QDRANT_COLLECTIONS=collection1_v1, collection2_v1, collection3_v2
-
-# DB
-DB_POSTGRES_URL=postgresql+psycopg://user-name:password@base-url:5432/canar
-```
-
-## Utilisation
-
-Pour lancer l'application CanaR :
-
-```
+Lancer l'application :
+```shell
 canar
 ```
 
+Si la commande `canar` n'est pas disponible, lancer Streamlit directement :
+```shell
+streamlit run canar/app/main.py
+```
+
+## Pré-requis
+
+- **Docker + Docker Compose** (Linux) ou **Docker Desktop** (Windows)
+- **Python ≥ 3.10**
+CanaR a besoin :
+- d'une base vectorielle (RAG) : **Qdrant**
+- d'une base relationnelle (comptes utilisateurs + historique) : **Postgres**
+
+Le fichier docker-compose est fourni dans `infra/docker-compose.yml`
+
+## Configuration
+
+Exemple :
+
+```dotenv
+# LLM (exemple)
+LLM_API_BASE=https://url_llm/v1
+LLM_API_KEY=
+LLM_MODEL=mistralai/Mistral-Small-24B-Instruct-2501
+
+# Embeddings (exemple)
+EMBED_API_BASE=https://url_embed/v1
+EMBED_API_KEY=
+EMBED_MODEL=BAAI/bge-multilingual-gemma2
+
+# Qdrant
+# QDRANT_URL=http://qdrant:6333        # si CanaR tourne dans Docker
+QDRANT_URL=http://localhost:6333       # si CanaR tourne sur l'hôte
+QDRANT_API_KEY=
+QDRANT_COLLECTIONS=collection1_v1,collection2_v1
+
+# Postgres
+# DB_POSTGRES_URL=postgresql+psycopg://canar:canar@postgres:5432/canar   # docker
+DB_POSTGRES_URL=postgresql+psycopg://canar:canar@localhost:5432/canar    # host
+```
+
+## Contribuer
+
+Consultez : [CONTRIBUTING.fr.md]()
+
+## Licence
+
+TBD (à confirmer par les mainteneurs).
+
+## Problèmes courants
+
+### Ports
+
+Les ports suivants doivent être disponibles :
+
+| Service           | Port par défaut |
+| ----------------- | --------------- |
+| Postgres          | `5432`          |
+| Qdrant            | `6333`          |
+| CanaR (Streamlit) | `8501`          |
