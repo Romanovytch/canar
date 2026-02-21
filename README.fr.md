@@ -16,6 +16,20 @@ Pour plus d’informations sur l’installation, les fonctionnalités et la cont
 
 ## Démarrage rapide (local)
 
+Un `Makefile` minimal est disponible (optionnel) :
+
+```shell
+Targets:
+  make up      - Start Qdrant + Postgres (docker compose)
+  make down    - Stop containers
+  make reset   - Stop + remove volumes
+  make logs    - Follow logs
+  make venv    - Create venv
+  make install - Install CanaR (editable)
+  make run     - Run CanaR
+  make test    - Run tests
+```
+
 ### 1) Démarrer Qdrant + Postgres (Docker Compose)
 
 ```shell
@@ -30,8 +44,8 @@ L’UI Qdrant est accessible sur `http://localhost:6333/dashboard`.
 
 Crée un fichier `.env` à la racine du projet à partir de `.env.example`.
 > :warning: Important : la valeur de `QDRANT_URL` et `DB_POSTGRES_URL` dépend de **l’endroit où tourne CanaR** :
-- CanaR lancé sur l’hôte (venv / canar / streamlit run) → utiliser `localhost`
-- CanaR lancé dans Docker (service canar dans un compose) → utiliser les noms de service Docker : `qdrant`, `postgres`
+> - CanaR lancé sur l’hôte (venv / canar / streamlit run) → utiliser `localhost`
+> - CanaR lancé dans Docker (service canar dans un compose) → utiliser les noms de service Docker : `qdrant`, `postgres`
 
 | Variable             | Description                                    | Exemple                                                                                            |
 | -------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -63,13 +77,14 @@ canar
 
 Si la commande `canar` n'est pas disponible, lancer Streamlit directement :
 ```shell
-streamlit run canar/app/main.py
+streamlit run canar/app/main.py --server.headless true --server.port 8501
 ```
 
 ## Pré-requis
 
 - **Docker + Docker Compose** (Linux) ou **Docker Desktop** (Windows)
 - **Python ≥ 3.10**
+
 CanaR a besoin :
 - d'une base vectorielle (RAG) : **Qdrant**
 - d'une base relationnelle (comptes utilisateurs + historique) : **Postgres**
@@ -78,7 +93,7 @@ Le fichier docker-compose est fourni dans `infra/docker-compose.yml`
 
 ## Configuration
 
-Exemple :
+Exemple de `.env`:
 
 ```dotenv
 # LLM (exemple)
