@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 import streamlit as st
+
+from canar.app.agents import r_helpdesk, sas_to_r
+from canar.app.api.embed_client import EmbedClient
+from canar.app.api.llm_client import ChatClient
+from canar.app.api.retrieval import search_qdrant
 from canar.app.config import AppConfig
 from canar.app.state import DB
-from canar.app.api.llm_client import ChatClient
-from canar.app.api.embed_client import EmbedClient
-from canar.app.api.retrieval import search_qdrant
-from canar.app.agents import sas_to_r, r_helpdesk
-from canar.app.ui.sidebar import sidebar
 from canar.app.ui.chat import render_messages, stream_answer
+from canar.app.ui.sidebar import sidebar
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -124,13 +126,19 @@ ctrl_left, ctrl_right = st.columns([2, 1])
 with ctrl_right:
     max_tokens = st.slider(
         "Max tokens réponse",
-        min_value=256, max_value=8192, value=2048, step=256,
-        help="Augmente si tu colles de longs extraits de code."
+        min_value=256,
+        max_value=8192,
+        value=2048,
+        step=256,
+        help="Augmente si tu colles de longs extraits de code.",
     )
     temperature = st.slider(
         "Température",
-        min_value=0.0, max_value=1.0, value=0.2, step=0.05,
-        help="Plus élevé = plus créatif."
+        min_value=0.0,
+        max_value=1.0,
+        value=0.2,
+        step=0.05,
+        help="Plus élevé = plus créatif.",
     )
 
 st.markdown(
@@ -185,7 +193,7 @@ st.markdown(
 )
 
 # LLM and Embedding clients
-chat = ChatClient(cfg.mistral_base, cfg.mistral_key, cfg.mistral_model)
+chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 
 # Show messages
@@ -216,8 +224,12 @@ if user_input:
     else:  # r_helpdesk
         qvec = embed.embed_query(user_input)
         citations = search_qdrant(
-            cfg.qdrant_url, cfg.qdrant_api_key, list(cfg.qdrant_collections),
-            qvec, top_k_per_collection=5, source_filter="utilitr"
+            cfg.qdrant_url,
+            cfg.qdrant_api_key,
+            list(cfg.qdrant_collections),
+            qvec,
+            top_k_per_collection=5,
+            source_filter="utilitr",
         )
         messages, src_list = r_helpdesk.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
@@ -226,7 +238,11 @@ if user_input:
         # Citations panel
         with st.expander("Sources"):
             for src in src_list:
-                st.markdown(f"- **[{src['label']}]** {src['section']}  \n  {src['url']}  \n  _({src['collection']})_")
+                st.markdown(f"""
+                - **[{src["label"]}]** {src["section"]}  \n  
+                {src["url"]}  \n  
+                _({src["collection"]})_
+                """)
 
 # Footer / export for SAS→R
 if st.session_state["agent"] == "sas_to_r":
@@ -238,4 +254,9 @@ if st.session_state["agent"] == "sas_to_r":
             code = content
             if "```r" in content:
                 code = content.split("```r", 1)[1].split("```", 1)[0]
-            st.download_button("Télécharger .R", data=code.encode("utf-8"), file_name="translation.R", mime="text/x-r-source")
+            st.download_button(
+                "Télécharger .R",
+                data=code.encode("utf-8"),
+                file_name="translation.R",
+                mime="text/x-r-source",
+            )

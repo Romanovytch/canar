@@ -1,8 +1,8 @@
 [project]
 name = "canar"
-version = "0.4.0"
+version = "0.5.0"
 requires-python = ">=3.10"
-description = "Web chatbots for R users (Insee)"
+description = "Web chatbots using RAG"
 readme = "README.md"
 
 dependencies = [
@@ -29,3 +29,14 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 # Package the launcher (`canar`)
 include = ["canar*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]

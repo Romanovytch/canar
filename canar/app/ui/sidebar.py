@@ -1,6 +1,7 @@
 from __future__ import annotations
+
 import streamlit as st
-from typing import Optional
+
 from ..state import DB
 
 AGENT_LABELS = {
@@ -9,8 +10,9 @@ AGENT_LABELS = {
 }
 
 
-def sidebar(db: DB, user_id: int, current_conv_id: Optional[int],
-            agent_options: list[str], current_agent: str):
+def sidebar(
+    db: DB, user_id: int, current_conv_id: int | None, agent_options: list[str], current_agent: str
+):
     st.sidebar.header("Conversations")
 
     # Create new (compact)
@@ -82,8 +84,11 @@ def sidebar(db: DB, user_id: int, current_conv_id: Optional[int],
             line-height: 1.0 !important;
         }
         /* Keep the trigger aligned right & vertically centered in its column */
-        section[data-testid="stSidebar"] div[data-testid="column"]:has(> div > div[data-testid="stPopover"]) {
-            display: flex; justify-content: flex-end; align-items: center;
+        section[data-testid="stSidebar"]
+            div[data-testid="column"]:has(> div > div[data-testid="stPopover"]) {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
         }
 
         /* Agent label sits INSIDE the conversation block, just under the title */
