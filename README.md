@@ -120,7 +120,7 @@ DB_POSTGRES_URL=postgresql+psycopg://canar:canar@localhost:5432/canar    # host
 
 ## Contributing
 
-See: [CONTRIBUTING.fr.md]()
+See: [CONTRIBUTING.md]()
 
 ## License
 
