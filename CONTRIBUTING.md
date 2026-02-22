@@ -104,7 +104,7 @@ Use clear, action-oriented messages. If relevant, reference the issue number:
 Before opening a PR:
 
 ```bash
-pytest -q
+pytest
 ```
 If you use the Makefile:
 ```bash
@@ -115,7 +115,7 @@ make test
 Open a PR to the main development branch and fill the PR template.
 
 ### 6) Review and merge
-- External contributors: at least **1 approval** is required
+- At least **1 approval** (review) is required
 - CI checks must pass before merging
 - Prefer **Squash and merge** for a clean history (linear history)
 
