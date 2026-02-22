@@ -22,6 +22,8 @@ Be respectful and constructive. (A dedicated `CODE_OF_CONDUCT.md` may be added l
     git fetch upstream
     ```
 
+**Maintainers can work directly on the main repository.**
+
 ### 2) Local environment
 
 #### Prerequisites
@@ -36,7 +38,7 @@ docker compose up -d
 docker compose ps
 ```
 
-Qdrant UI : https://github.com/Romanovytch/canar.git
+Qdrant UI : https://localhost:6333/dashboard
 
 #### Create a virtual environment
 ```bash
@@ -66,6 +68,7 @@ We track work using Github Issues and project boards:
 - AgoRa board: https://github.com/users/Romanovytch/projects/1
 
 When opening an issue, please:
+- Assign yourself
 - Add labels when possible (at least one `area:*`, one `type:*`, one `priority:*`)
 - Describe the problem and expected outcome (you can use provided templates)
 - Provide acceptance criteria and dependencies if any
@@ -84,11 +87,12 @@ Examples:
 Example:
 ```bash
 git switch dev
-git checkout -b feat/123-add-default-agent
+git pull --rebase
+git switch -c feat/123-add-default-agent
 ```
-or shorter:
+or shorter (but be careful there is no pull here):
 ```bash
-git checkout -b feat/123-add-default-agent dev
+git switch -c feat/123-add-default-agent dev
 ```
 
 ### 3) Commit messages
