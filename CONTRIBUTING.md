@@ -1,3 +1,5 @@
+[🇫🇷 Français](CONTRIBUTING.fr.md) | [🇬🇧 English](CONTRIBUTING.md)
+
 # Contributing to CanaR
 
 Thanks for taking the time to contribute! This document describes the workflow we use to keep changes reviewable and reproducible.

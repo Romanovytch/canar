@@ -8,6 +8,8 @@ Merci de rester respectueux·se et constructif·ve. (Un fichier `CODE_OF_CONDUCT
 
 ## Bien démarrer
 
+Si vous développez sur Windows, préférez suivre le guide [Développement sous Windows](#développement-sous-windows-wsl2--docker-desktop)
+
 ### 1) Fork et clone (contributeurs externes)
 
 1. Forkez le dépôt sur GitHub
