@@ -1,21 +1,22 @@
 from __future__ import annotations
-import os
+
 import datetime as dt
-from typing import Optional, List
-from sqlmodel import SQLModel, Field, Session, create_engine, select, delete
+import os
+
 import bcrypt
+from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 
 
 # ---------- Models ----------
 class User(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     password_hash: str
     created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
 
 
 class Conversation(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(index=True, foreign_key="user.id")
     title: str
     agent: str  # "sas_to_r" | "r_helpdesk"
@@ -24,7 +25,7 @@ class Conversation(SQLModel, table=True):
 
 
 class Message(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     conversation_id: int = Field(index=True, foreign_key="conversation.id")
     role: str  # "user" | "assistant" | "system"
     content: str
@@ -37,8 +38,9 @@ class DB:
         db_url = os.getenv("DB_POSTGRES_URL", "").strip()
         if db_url:
             # Postgres with a small pool for concurrent users
-            self.engine = create_engine(db_url, echo=False, pool_size=5,
-                                        max_overflow=10, pool_pre_ping=True)
+            self.engine = create_engine(
+                db_url, echo=False, pool_size=5, max_overflow=10, pool_pre_ping=True
+            )
         else:
             os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
             self.engine = create_engine(f"sqlite:///{sqlite_path}", echo=False)
@@ -50,15 +52,16 @@ class DB:
             existing = s.exec(select(User).where(User.username == username)).first()
             if existing:
                 raise ValueError("Nom d’utilisateur déjà pris.")
-            pw_hash = bcrypt.hashpw(password.encode("utf-8"),
-                                    bcrypt.gensalt(rounds=12)).decode("utf-8")
+            pw_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode(
+                "utf-8"
+            )
             u = User(username=username, password_hash=pw_hash)
             s.add(u)
             s.commit()
             s.refresh(u)
             return u.id
 
-    def verify_user(self, username: str, password: str) -> Optional[int]:
+    def verify_user(self, username: str, password: str) -> int | None:
         with Session(self.engine) as s:
             u = s.exec(select(User).where(User.username == username)).first()
             if not u:
@@ -66,7 +69,7 @@ class DB:
             ok = bcrypt.checkpw(password.encode("utf-8"), u.password_hash.encode("utf-8"))
             return u.id if ok else None
 
-    def get_user(self, user_id: int) -> Optional[User]:
+    def get_user(self, user_id: int) -> User | None:
         with Session(self.engine) as s:
             return s.get(User, user_id)
 
@@ -79,15 +82,17 @@ class DB:
             s.refresh(conv)
             return conv.id
 
-    def get_conversation(self, conv_id: int) -> Optional[Conversation]:
+    def get_conversation(self, conv_id: int) -> Conversation | None:
         with Session(self.engine) as s:
             return s.get(Conversation, conv_id)
 
-    def list_conversations(self, user_id: int) -> List[Conversation]:
+    def list_conversations(self, user_id: int) -> list[Conversation]:
         with Session(self.engine) as s:
-            stmt = (select(Conversation)
-                    .where(Conversation.user_id == user_id)
-                    .order_by(Conversation.updated_at.desc()))
+            stmt = (
+                select(Conversation)
+                .where(Conversation.user_id == user_id)
+                .order_by(Conversation.updated_at.desc())
+            )
             return list(s.exec(stmt))
 
     def rename_conversation(self, user_id: int, conv_id: int, new_title: str):
@@ -123,7 +128,7 @@ class DB:
             s.refresh(m)
             return m.id
 
-    def get_messages(self, user_id: int, conv_id: int) -> List[Message]:
+    def get_messages(self, user_id: int, conv_id: int) -> list[Message]:
         with Session(self.engine) as s:
             c = s.get(Conversation, conv_id)
             if not c or c.user_id != user_id:

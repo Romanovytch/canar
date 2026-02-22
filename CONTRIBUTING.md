@@ -40,6 +40,8 @@ docker compose up -d
 docker compose ps
 ```
 
+or `make up` if you use Makefile.
+
 Qdrant UI : https://localhost:6333/dashboard
 
 #### Create a virtual environment
@@ -49,11 +51,17 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
+or `make venv` if you use Makefile (you only need to do this once to create the venv).
+
 #### Install CanaR
 ```bash
 pip install -U pip
-pip install -e .
+pip install -e ".[dev]"
 ```
+
+> `pip install -e ".[dev]"` will install dev tools such as pytest and ruff for testing and formatting.
+
+or `make install` if you use Makefile
 
 ### 3) Configuration
 Create a `.env` file at the project root based on `.env.example`.
@@ -102,16 +110,37 @@ Use clear, action-oriented messages. If relevant, reference the issue number:
 - `Fix retrieval ranking for multi-collection queries (#123)`
 - `Docs: clarify docker hostnames (#77)`
 
-### 4) Run tests locally
-Before opening a PR:
+### 4) Run tests, lint and format check localy
 
+#### Tests
+
+Before opening a PR:
 ```bash
 pytest
 ```
-If you use the Makefile:
+or `make test`
+
+#### Lint & Format check
+
+Ruff can check code quality for errors (also called *lint*):
 ```bash
-make test
+ruff check .
 ```
+or `make lint`
+
+Check if files are well formated:
+```bash
+ruff format --check
+```
+or `make format-check`
+
+> Auto format :
+> ```bash
+> ruff check . --fix
+> ```
+> or `make format`
+
+If you use makefile, `make ci` does it all just like github CI.
 
 ### 5) Open a Pull Request
 Open a PR to the main development branch and fill the PR template.

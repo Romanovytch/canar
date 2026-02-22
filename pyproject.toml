@@ -35,7 +35,8 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-# Par défaut Ruff active déjà pas mal de règles utiles.
-# Tu peux commencer simple, puis durcir plus tard si besoin.
 select = ["E", "F", "I", "UP", "B"]
 ignore = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]

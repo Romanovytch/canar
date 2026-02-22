@@ -1,3 +1,5 @@
+[🇫🇷 Français](CONTRIBUTING.fr.md) | [🇬🇧 English](CONTRIBUTING.md)
+
 # Contribuer à CanaR
 
 Merci de prendre le temps de contribuer ! Ce document décrit le workflow que nous utilisons pour garder des changements faciles à relire et reproductibles.
@@ -42,6 +44,8 @@ docker compose up -d
 docker compose ps
 ```
 
+ou `make up` si vous utilisez le Makefile.
+
 UI Qdrant : `http://localhost:6333/dashboard`
 
 #### Créer un environnement virtuel
@@ -51,11 +55,17 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
+ou `make venv` si vous utilisez le Makefile (ne faire qu'une seule fois pour créer l'environnement virtuel).
+
 #### Installer CanaR (mode editable)
 ```bash
 pip install -U pip
-pip install -e .
+pip install -e ".[dev]"
 ```
+
+> `pip install -e ".[dev]"` installe des outils essentiels au développement, comme **pytest** pour les tests et **ruff** pour le formattage. 
+
+ou `make install` si vous utilisez le Makefile.
 
 ### 3) Configuration
 
@@ -96,19 +106,37 @@ Utilisez des messages clairs et orientés action. Si pertinent, référencez le 
 - `Fix retrieval ranking for multi-collection queries (#123)`
 - `Docs: clarify docker hostnames (qdrant/postgres) (#77)`
 
-### 4) Lancer les tests localement
+### 4) Lancer les tests, l'analyse du code et le formattage localement
+
+#### Tests
 
 Avant d’ouvrir une PR :
 ```bash
 pytest
 ```
+ou `make test`
 
-Si vous utilisez le Makefile :
+#### Analyse & Formattage
+
+Ruff permets d'analyser la qualité du code pour de potentielles erreurs (aussi appelé *lint*) :
 ```bash
-make test
+ruff check .
 ```
+ou `make lint`
 
-(Si des outils de lint/format sont ajoutés en CI, lancez-les aussi en local.)
+Vérifier si les fichiers sont bien formattés :
+```bash
+ruff format --check
+```
+ou `make format-check`
+
+> Pour lancer un formattage automatique :
+> ```bash
+> ruff check . --fix
+> ```
+> ou `make format`
+
+Si vous utilisez le makefile, `make ci` lance les tests, l'analyse du code et la vérification du formattage.
 
 ### 5) Ouvrir une Pull Request
 
@@ -219,5 +247,7 @@ docker compose ps
   ```
 
 Docker Desktop conservera votre docker compose et vous pourrez le lancer directement en appuyant sur le bouton "Play" |>.
+
+**À partir de là, vous pouvez reprendre le guide à [Créer un environnement virtuel](#créer-un-environnement-virtuel)**
 
 **Bon dev, quack !**
