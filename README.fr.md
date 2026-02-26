@@ -10,7 +10,7 @@ CanaR permet de :
 - :mag_right: **Enrichir les réponses par la recherche documentaire** (RAG) et **citer les sources** utilisées
 - :page_facing_up: **Conserver l’historique** des conversations (sessions et messages)
 
-Pour plus d’informations sur l’installation, les fonctionnalités et la contribution, consultez la **documentation** : [Documentation CanaR](https://www.google.com/).
+Pour plus d’informations sur l’installation, les fonctionnalités et la contribution, consultez la **documentation** : [Documentation CanaR](#canar) (en construction :construction: ).
 
 ---
 
@@ -20,14 +20,18 @@ Un `Makefile` minimal est disponible (optionnel) :
 
 ```shell
 Targets:
-  make up      - Start Qdrant + Postgres (docker compose)
-  make down    - Stop containers
-  make reset   - Stop + remove volumes
-  make logs    - Follow logs
-  make venv    - Create venv
-  make install - Install CanaR (editable)
-  make run     - Run CanaR
-  make test    - Run tests
+  make up            - Start Qdrant + Postgres (docker compose)
+  make down          - Stop containers
+  make reset         - Stop + remove volumes
+  make logs          - Follow docker logs
+  make venv          - Create venv (.venv)
+  make install       - Install CanaR (editable) + dev tools
+  make run           - Run CanaR (entrypoint or Streamlit fallback)
+  make test          - Run tests (pytest)
+  make lint          - Run ruff lint (check)
+  make format        - Auto-format with ruff
+  make format-check  - Check formatting with ruff
+  make ci            - Run lint + format-check + tests
 ```
 
 ### 1) Démarrer Qdrant + Postgres (Docker Compose)
@@ -37,6 +41,7 @@ cd infra
 docker compose up -d
 docker compose ps
 ```
+ou `make up`
 
 L’UI Qdrant est accessible sur `http://localhost:6333/dashboard`.
 
@@ -69,11 +74,13 @@ source .venv/bin/activate
 pip install -U pip
 pip install -e .
 ```
+ou `make venv` pour créer l'environnement (python -m venv .venv) et `make install` pour charger l'environnement et installer CanaR.
 
 Lancer l'application :
 ```shell
 canar
 ```
+ou `make run`
 
 Si la commande `canar` n'est pas disponible, lancer Streamlit directement :
 ```shell
@@ -99,12 +106,12 @@ Exemple de `.env`:
 # LLM (exemple)
 LLM_API_BASE=https://url_llm/v1
 LLM_API_KEY=
-LLM_MODEL=mistralai/Mistral-Small-24B-Instruct-2501
+LLM_MODEL=nom_model
 
 # Embeddings (exemple)
 EMBED_API_BASE=https://url_embed/v1
 EMBED_API_KEY=
-EMBED_MODEL=BAAI/bge-multilingual-gemma2
+EMBED_MODEL=nom_model
 
 # Qdrant
 # QDRANT_URL=http://qdrant:6333        # si CanaR tourne dans Docker
@@ -119,7 +126,7 @@ DB_POSTGRES_URL=postgresql+psycopg://canar:canar@localhost:5432/canar    # host
 
 ## Contribuer
 
-Consultez : [CONTRIBUTING.fr.md]()
+Consultez : [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md)
 
 ## Licence
 

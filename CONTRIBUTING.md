@@ -78,14 +78,16 @@ We track work using Github Issues and project boards:
 - AgoRa board: https://github.com/users/Romanovytch/projects/1
 
 When opening an issue, please:
-- Assign yourself
+- Use one of the templates: Epic, Subtask, Feature request, Documentation, Bug report
+> Epics are for big features or multiple features that needs to be broke down into subtasks. Subtasks should be created as new issues and then linked to its Epic.
+- Assign yourself if you take it
 - Add labels when possible (at least one `area:*`, one `type:*`, one `priority:*`)
-- Describe the problem and expected outcome (you can use provided templates)
-- Provide acceptance criteria and dependencies if any
+- Fill the templates' inputs.
+
 
 ### 2) Create a branch
 
-Create a branch from the current development branch (e.g. `dev`).
+Create a branch from the current development branch (e.g. `dev`). If it's an Epic's subtask, create the branch from the epic branch.
 
 Branch naming convention:
 - `<type>/<issueNumber>-<short-slug>`
@@ -143,7 +145,7 @@ or `make format-check`
 If you use makefile, `make ci` does it all just like github CI.
 
 ### 5) Open a Pull Request
-Open a PR to the main development branch and fill the PR template.
+Open a PR to the dev branch (or epic branch if subtask) and fill the PR template.
 
 ### 6) Review and merge
 - At least **1 approval** (review) is required
