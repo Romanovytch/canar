@@ -10,7 +10,7 @@ CanaR lets you:
 - :mag_right: **Augment answers with document retrieval** (RAG) and **cite the sources** used
 - :page_facing_up: **Keep conversation history** (sessions and messages)
 
-For more information about installation, features, and contributing, see the **documentation**: [CanaR Documentation](https://www.google.com/).
+For more information about installation, features, and contributing, see the **documentation**: [CanaR Documentation](#canar) (under construction :construction: ).
 
 ---
 
@@ -20,14 +20,18 @@ A minimal `Makefile` is available (optional):
 
 ```shell
 Targets:
-  make up      - Start Qdrant + Postgres (docker compose)
-  make down    - Stop containers
-  make reset   - Stop + remove volumes
-  make logs    - Follow logs
-  make venv    - Create venv
-  make install - Install CanaR (editable)
-  make run     - Run CanaR
-  make test    - Run tests
+  make up            - Start Qdrant + Postgres (docker compose)
+  make down          - Stop containers
+  make reset         - Stop + remove volumes
+  make logs          - Follow docker logs
+  make venv          - Create venv (.venv)
+  make install       - Install CanaR (editable) + dev tools
+  make run           - Run CanaR (entrypoint or Streamlit fallback)
+  make test          - Run tests (pytest)
+  make lint          - Run ruff lint (check)
+  make format        - Auto-format with ruff
+  make format-check  - Check formatting with ruff
+  make ci            - Run lint + format-check + tests
 ```
 
 ### 1) Start Qdrant + Postgres (Docker Compose)
@@ -37,6 +41,7 @@ cd infra
 docker compose up -d
 docker compose ps
 ```
+or `make up`
 
 The Qdrant UI is available at `http://localhost:6333/dashboard`.
 
@@ -70,11 +75,13 @@ source .venv/bin/activate
 pip install -U pip
 pip install -e .
 ```
+or `make venv` & `make install`
 
 Run the application:
 ```shell
 canar
 ```
+or `make run`
 
 If the `canar` command is not available, run Streamlit directly:
 ```shell
@@ -100,12 +107,12 @@ Example `.env`:
 # LLM (example)
 LLM_API_BASE=https://url_llm/v1
 LLM_API_KEY=
-LLM_MODEL=mistralai/Mistral-Small-24B-Instruct-2501
+LLM_MODEL=model_name
 
 # Embeddings (example)
 EMBED_API_BASE=https://url_embed/v1
 EMBED_API_KEY=
-EMBED_MODEL=BAAI/bge-multilingual-gemma2
+EMBED_MODEL=model_name
 
 # Qdrant
 # QDRANT_URL=http://qdrant:6333        # if CanaR runs in Docker
@@ -120,7 +127,7 @@ DB_POSTGRES_URL=postgresql+psycopg://canar:canar@localhost:5432/canar    # host
 
 ## Contributing
 
-See: [CONTRIBUTING.md]()
+See: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 

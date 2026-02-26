@@ -84,13 +84,15 @@ Nous suivons le travail via GitHub Issues et des boards :
 - Board AgoRa : https://github.com/users/Romanovytch/projects/1
 
 Quand vous ouvrez une issue, merci de :
+- Choisir un template : Epic, Subtask, Feature request, Documentation, Bug report
+> Les Epic sont pour les fonctionnalités conséquentes ou pour plusieurs fonctionnalités qui nécessitent d'être divisés en plusieurs sous-tâches (subtasks). Les subtasks doivent être crées en dehors de l'Epic puis liées à l'Epic ensuite. 
 - Ajouter des labels si possible (au moins un `area:*`, un `type:*`, un `priority:*`)
-- Décrire le problème et le résultat attendu
-- Fournir des critères d’acceptation et des dépendances si nécessaire
+- Remplir le template
+
 
 ### 2) Créer une branche
 
-Créez une branche à partir de la branche de développement courante (par ex. `dev-*` si utilisé) ou de `main` si le dépôt n’utilise qu’une branche stable.
+Créez une branche à partir de la branche de développement courante (par ex. `dev`) ou d'un `epic/*` dans le cas d'une subtask.
 
 Convention de nommage :
 - `<type>/<numeroIssue>-<slug-court>`
@@ -140,7 +142,7 @@ Si vous utilisez le makefile, `make ci` lance les tests, l'analyse du code et la
 
 ### 5) Ouvrir une Pull Request
 
-Ouvrez une PR vers la branche de développement principale (souvent `main`, ou `dev-*` si précisé dans le dépôt).
+Ouvrez une PR vers la branche de développement principale (souvent `dev` ou un `epic/*`) et remplissez le template de PR.
 
 Bonnes pratiques :
 - Lier l’issue : `Closes #123`
