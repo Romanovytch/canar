@@ -1,35 +1,35 @@
 services:
-  postgres:
+  joao-postgres:
     image: postgres:16
-    container_name: canar-postgres
+    container_name: joao-canar-postgres
     environment:
       POSTGRES_USER: canar
       POSTGRES_PASSWORD: canar
       POSTGRES_DB: canar
     ports:
-      - "5432:5432"
+      - "5442:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - joao-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U canar -d canar"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  qdrant:
+  joao-qdrant:
     image: qdrant/qdrant:latest
-    container_name: canar-qdrant
+    container_name: joao-canar-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "6343:6333"
+      - "6344:6334"
     volumes:
-      - qdrantdata:/qdrant/storage
+      - joao-qdrantdata:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/readyz"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:6343/readyz"]
       interval: 5s
       timeout: 3s
       retries: 20
 
 volumes:
-  pgdata:
-  qdrantdata:
+  joao-pgdata:
+  joao-qdrantdata:
