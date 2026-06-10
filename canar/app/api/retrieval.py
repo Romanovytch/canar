@@ -13,6 +13,7 @@ def search_qdrant(
     query_vector: list[float],
     top_k_per_collection: int = 5,
     source_filter: str | None = "utilitr",
+    vector_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Returns a unified list of hits across collections with normalized per-collection score.
@@ -23,14 +24,20 @@ def search_qdrant(
         flt = None
         if source_filter:
             flt = Filter(must=[FieldCondition(key="source", match=MatchValue(value=source_filter))])
-        hits = client.search(
-            collection_name=col,
-            query_vector=query_vector,
-            limit=top_k_per_collection,
-            with_payload=True,
-            with_vectors=False,
-            query_filter=flt,
-        )
+
+        query_args: dict[str, Any] = {
+            "collection_name": col,
+            "query": query_vector,
+            "limit": top_k_per_collection,
+            "with_payload": True,
+            "with_vectors": False,
+            "query_filter": flt,
+        }
+        if vector_name is not None:
+            query_args["using"] = vector_name
+
+        hits = client.query_points(**query_args).points
+
         if not hits:
             continue
         # min-max normalize within the collection to make cross-collection fusion saner
