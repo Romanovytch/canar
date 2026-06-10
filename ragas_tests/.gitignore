@@ -1,0 +1,10 @@
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local credentials (keep .env.example tracked)
+.env
+
+# Evaluation outputs
+experiments/*.csv
