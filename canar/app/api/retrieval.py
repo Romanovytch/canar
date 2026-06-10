@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
+from canar.app.retrieval.models import RetrievalProfile, RetrievalQuery
+from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy
 
 
 def search_qdrant(
@@ -16,41 +17,30 @@ def search_qdrant(
     vector_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Returns a unified list of hits across collections with normalized per-collection score.
+    Compatibility wrapper for the previous retrieval API.
+
+    New application code should use canar.app.retrieval.RetrievalService.
     """
-    client = QdrantClient(url=qdrant_url, api_key=api_key or None)
-    all_hits = []
-    for col in collections:
-        flt = None
-        if source_filter:
-            flt = Filter(must=[FieldCondition(key="source", match=MatchValue(value=source_filter))])
-
-        query_args: dict[str, Any] = {
-            "collection_name": col,
-            "query": query_vector,
-            "limit": top_k_per_collection,
-            "with_payload": True,
-            "with_vectors": False,
-            "query_filter": flt,
+    profile = RetrievalProfile(
+        name="simple_vector",
+        strategy="simple_vector",
+        collections=tuple(collections),
+        top_k=top_k_per_collection,
+        score_threshold=0.35,
+        source_filter=source_filter,
+        fallback_top_k=3,
+        vector_name=vector_name,
+    )
+    strategy = SimpleVectorStrategy(profile, QdrantRetrievalAdapter(qdrant_url, api_key))
+    hits = strategy.search(
+        RetrievalQuery(text="", profile_name=profile.name, dense_vector=query_vector)
+    )
+    return [
+        {
+            "collection": hit.collection,
+            "score": hit.score,
+            "score_norm": hit.score_norm,
+            "payload": hit.metadata,
         }
-        if vector_name is not None:
-            query_args["using"] = vector_name
-
-        hits = client.query_points(**query_args).points
-
-        if not hits:
-            continue
-        # min-max normalize within the collection to make cross-collection fusion saner
-        scores = [h.score for h in hits]
-        lo, hi = min(scores), max(scores)
-        rng = (hi - lo) or 1.0
-        for h in hits:
-            norm = (h.score - lo) / rng
-            all_hits.append(
-                {"collection": col, "score": h.score, "score_norm": norm, "payload": h.payload}
-            )
-    # sort by normalized score then raw score
-    all_hits.sort(key=lambda x: (x["score_norm"], x["score"]), reverse=True)
-    # filter out weak tails (often irrelevant): keep those with score_norm >= 0.35 or the top-3
-    pruned = [h for h in all_hits if h["score_norm"] >= 0.35] or all_hits[:3]
-    return pruned
+        for hit in hits
+    ]

@@ -5,8 +5,8 @@ import streamlit as st
 from canar.app.agents import r_helpdesk, sas_to_r
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
-from canar.app.api.retrieval import search_qdrant
 from canar.app.config import AppConfig
+from canar.app.retrieval.service import RetrievalService
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
@@ -195,6 +195,7 @@ st.markdown(
 # LLM and Embedding clients
 chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
+retrieval = RetrievalService.from_config(cfg, embed)
 
 # Show messages
 render_messages(db, USER_ID, conv_id)
@@ -222,15 +223,7 @@ if user_input:
         _ = stream_answer(db, USER_ID, conv_id, gen)
 
     else:  # r_helpdesk
-        qvec = embed.embed_query(user_input)
-        citations = search_qdrant(
-            cfg.qdrant_url,
-            cfg.qdrant_api_key,
-            list(cfg.qdrant_collections),
-            qvec,
-            top_k_per_collection=5,
-            source_filter="utilitr",
-        )
+        citations = retrieval.search(st.session_state["agent"], user_input)
         messages, src_list = r_helpdesk.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
         answer = stream_answer(db, USER_ID, conv_id, gen)

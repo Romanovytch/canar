@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from canar.app.retrieval.models import RetrievalHit
+
 SYSTEM_PROMPT_FR = """
 Tu es “CoachR”, un formateur R très pédagogue pour un public venant majoritairement de SAS et peu 
 familier des langages de programmation.
@@ -27,27 +29,28 @@ Sortie: Markdown, blocs ```r```.
 """
 
 
-def assemble_context(citations: list[dict]) -> tuple[str, list[dict]]:
+def assemble_context(citations: list[RetrievalHit]) -> tuple[str, list[dict]]:
     """
     Map citations to labels [S1].. and return (context_text, source_list_for_ui)
     """
     lines = []
     srcs = []
-    for i, h in enumerate(citations, 1):
-        p = h["payload"] or {}
+    for i, hit in enumerate(citations, 1):
         label = f"S{i}"
-        url = p.get("url") or p.get("source_url")
-        section = p.get("section") or ""
-        text = p.get("text") or ""
-        lines.append(f"[{label}] {section}\n{text}\n")
+        lines.append(f"[{label}] {hit.section}\n{hit.text}\n")
         srcs.append(
-            {"label": label, "url": url, "section": section, "collection": h.get("collection")}
+            {
+                "label": label,
+                "url": hit.source_url,
+                "section": hit.section,
+                "collection": hit.collection,
+            }
         )
     context = "\n---\n".join(lines)
     return context, srcs
 
 
-def build_messages(query: str, citations: list[dict]) -> tuple[list[dict], list[dict]]:
+def build_messages(query: str, citations: list[RetrievalHit]) -> tuple[list[dict], list[dict]]:
     context_text, src_list = assemble_context(citations)
     user_msg = (
         f"Question: {query}\n\nContexte (extraits documentaires):\n{context_text}\n\n"
