@@ -5,6 +5,26 @@ One entry per meaningful run. Raw per-question CSVs live in `experiments/`
 
 ---
 
+## 2026-06-11 — utilitR-grounded benchmark (utilitr_bench)
+
+**Config:** 12 questions derived from utilitR fiches (`utilitr_bench/datasets/utilitr_questions.csv`) ·
+collection `utilitr` (1,209 chunks) · embeddings `bge-m3` · generator/judge `qwen3.5:9b` ·
+TOP_K 3 · metrics: retrieval_hit, Faithfulness, Answer Relevancy
+
+| Metric | Score | Coverage |
+|---|:-:|---|
+| Retrieval hit rate | **100%** (12/12) | deterministic |
+| Answer relevancy | **0.83** mean (~0.90 excluding one empty answer) | 12/12 |
+| Faithfulness | **1.0** on every valid score | 5/12 (7 judge timeouts) |
+
+**Notes**
+- Every question retrieved its target fiche in the top-3 — confirms the bge-m3 fix.
+- Relevancy up from 0.66 (demo set) to ~0.83–0.90 with corpus-grounded questions.
+- The local 9B judge remains the weak link: 7 faithfulness timeouts, 1 failed generation.
+- Raw CSV: `utilitr_bench/results/results_20260611_1105.csv` (local).
+
+---
+
 ## 2026-06-11 — Baseline (bge-m3)
 
 **Config:** collection `utilitr` (1,209 chunks, ~800 chars) · embeddings `bge-m3` ·
