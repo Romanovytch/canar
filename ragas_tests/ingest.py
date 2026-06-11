@@ -27,7 +27,7 @@ EMBED_API_BASE = os.environ["EMBED_API_BASE"].rstrip("/")
 EMBED_API_KEY = os.environ.get("EMBED_API_KEY", "EMPTY")
 EMBED_MODEL = os.environ["EMBED_MODEL"]
 
-UTILITR_PATH = Path(__file__).parent.parent.parent / "utilitR"
+UTILITR_PATH = Path(os.environ.get("UTILITR_PATH", "/home/cereq/opt/utilitR"))
 
 CHUNK_SIZE = 800       # chars (approximate — no tokenizer needed)
 CHUNK_OVERLAP = 150
@@ -101,6 +101,8 @@ def main():
     print(f"Scanning {UTILITR_PATH} ...")
     files = find_files(UTILITR_PATH)
     print(f"Found {len(files)} files")
+    if not files:
+        raise SystemExit(f"No markdown files found under {UTILITR_PATH} — check UTILITR_PATH")
 
     all_chunks = []
     for f in files:
@@ -125,7 +127,9 @@ def main():
     points = []
     for i in range(0, len(all_chunks), BATCH_SIZE):
         batch = all_chunks[i : i + BATCH_SIZE]
-        texts = [c["text"] for c in batch]
+        # nomic-embed-text requires task prefixes; other models (e.g. bge-m3) don't
+        prefix = "search_document: " if "nomic" in EMBED_MODEL else ""
+        texts = [prefix + c["text"] for c in batch]
         vectors = embed_batch(texts)
         for chunk, vector in zip(batch, vectors):
             points.append(

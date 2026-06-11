@@ -40,7 +40,7 @@ LLM_API_KEY = os.environ["LLM_API_KEY"]
 LLM_MODEL = os.environ["LLM_MODEL"]
 
 TOP_K = 3          # chunks to retrieve per question
-N_QUESTIONS = 2    # how many questions to evaluate (max 5; lower = faster)
+N_QUESTIONS = 5    # how many questions to evaluate (max 5; lower = faster)
 
 # ---------------------------------------------------------------------------
 # Clients
@@ -80,7 +80,9 @@ def embed_query(text: str) -> list[float]:
 
 
 def retrieve(query: str, top_k: int = TOP_K) -> list[str]:
-    vector = embed_query(query)
+    # nomic models need the "search_query: " prefix (pairs with ingest); others don't
+    prefix = "search_query: " if "nomic" in EMBED_MODEL else ""
+    vector = embed_query(prefix + query)
     hits = qdrant.query_points(
         collection_name=COLLECTION,
         query=vector,
@@ -150,7 +152,7 @@ def main():
         metrics=[Faithfulness(), ResponseRelevancy()],
         llm=llm,
         embeddings=embeddings,
-        run_config=RunConfig(timeout=300, max_workers=1),
+        run_config=RunConfig(timeout=600, max_workers=1),
     )
 
     result_df = results.to_pandas()
