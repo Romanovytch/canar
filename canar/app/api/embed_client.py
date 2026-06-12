@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import requests
 
+from canar.app.retrieval.models import SparseVector
+
 
 class EmbedClient:
     def __init__(self, base_url: str, model: str, api_key: str = ""):
@@ -21,3 +23,21 @@ class EmbedClient:
         v = np.array(r.json()["data"][0]["embedding"], dtype="float32")
         v /= np.linalg.norm(v) + 1e-12
         return v.tolist()
+
+
+class FastEmbedClient:
+    def __init__(self, model_name: str):
+        from fastembed import SparseTextEmbedding
+
+        self.model = SparseTextEmbedding(model_name)
+
+    def embed_query(self, text: str) -> SparseVector:
+        v = next(self.model.query_embed(text))
+        as_object = v.as_object()
+        return SparseVector(
+            indices=list(as_object["indices"]),
+            values=list(as_object["values"]),
+        )
+
+
+OpenAiEmbedClient = EmbedClient

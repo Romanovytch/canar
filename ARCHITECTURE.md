@@ -33,6 +33,7 @@ canar/
       strategies/
         base.py              RetrievalStrategy protocol
         simple_vector.py     Dense vector search strategy
+        simple_sparse.py     Sparse vector search strategy
     ui/
       chat.py                Chat rendering and assistant stream persistence
       sidebar.py             Conversation and agent sidebar
@@ -97,7 +98,22 @@ RetrievalProfile(
 )
 ```
 
-`hybrid` retrieval is not implemented in this repository yet. Ingestion is a separate project and sparse-vector or keyword-index availability is out of scope here.
+Additional implemented profile:
+
+```python
+RetrievalProfile(
+    name="simple_sparse",
+    strategy="simple_sparse",
+    collections=cfg.qdrant_collections,
+    top_k=5,
+    score_threshold=0.35,
+    source_filter="utilitr",
+    fallback_top_k=3,
+    vector_name=cfg.qdrant_sparse_vector_name or None,
+)
+```
+
+`hybrid` retrieval is not implemented in this repository yet. Sparse retrieval can be enabled by mapping an agent to `simple_sparse`, but ingestion remains a separate project and the configured Qdrant collections must already contain compatible sparse vectors.
 
 ## Retrieval strategy
 
@@ -114,6 +130,21 @@ The `simple_vector` strategy preserves the previous behavior:
 - Keep hits with `score_norm >= 0.35`.
 - If no hits survive the threshold, return the top 3 fused hits.
 
+### `simple_sparse`
+
+The `simple_sparse` strategy mirrors `simple_vector` with a sparse query vector:
+
+- Generate a sparse query vector using `FastEmbedClient` only when the selected profile requires it.
+- Query each configured Qdrant collection with the sparse vector.
+- Apply the `source == "utilitr"` filter by default.
+- Retrieve `top_k=5` hits per collection.
+- Min-max normalize scores within each collection.
+- Fuse all collection hits by sorting on `(score_norm, score)` descending.
+- Keep hits with `score_norm >= 0.35`.
+- If no hits survive the threshold, return the top 3 fused hits.
+
+This strategy assumes sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
+
 ### Hybrid retrieval
 
 Hybrid retrieval is intentionally not implemented. Future hybrid work should add a new strategy module without changing Streamlit UI, prompt assembly, or Qdrant adapter boundaries unless required by explicit design.
@@ -123,6 +154,12 @@ Hybrid retrieval is intentionally not implemented. Future hybrid work should add
 Retrieval code exchanges typed project-owned objects:
 
 ```python
+@dataclass(frozen=True)
+class SparseVector:
+    indices: list[int]
+    values: list[float]
+
+
 @dataclass(frozen=True)
 class RetrievalProfile:
     name: str
@@ -140,6 +177,7 @@ class RetrievalQuery:
     text: str
     profile_name: str
     dense_vector: list[float] | None = None
+    sparse_vector: SparseVector | None = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +234,7 @@ No retrieval context or history is added for this agent.
 | streamlit | Chat UI and session state |
 | openai | OpenAI-compatible chat completions |
 | qdrant-client | Vector search inside the Qdrant adapter only |
+| fastembed | Optional sparse query vector generation behind `FastEmbedClient` |
 | requests + numpy | Embedding HTTP call and vector normalization |
 | sqlmodel + psycopg | User/conversation/message persistence |
 
@@ -209,9 +248,11 @@ No retrieval context or history is added for this agent.
 | EMBED_API_BASE | Base URL for embeddings API |
 | EMBED_API_KEY | Embeddings API key |
 | EMBED_MODEL | Embeddings model name |
+| FASTEMBED_SPARSE_MODEL | Optional local FastEmbed sparse model used by sparse retrieval profiles |
 | QDRANT_URL | Qdrant endpoint |
 | QDRANT_API_KEY | Qdrant API key |
 | QDRANT_COLLECTIONS | Qdrant collections used by retrieval profiles |
+| QDRANT_SPARSE_VECTOR_NAME | Optional Qdrant named sparse vector |
 | DB_POSTGRES_URL | Postgres connection string |
 | APP_DB | SQLite path when Postgres is not configured |
 | CANAR_HEADLESS | Streamlit headless mode toggle |
@@ -222,7 +263,7 @@ No retrieval context or history is added for this agent.
 - Use Streamlit as the only application entrypoint, with chat events driven by `st.chat_input` rather than HTTP routes.
 - Store conversations and messages in a relational DB keyed by user ID, with a per-conversation agent field.
 - Select retrieval profile by agent using Python config in `canar/app/retrieval/profiles.py`.
-- Keep `simple_vector` as the only implemented retrieval strategy for now.
+- Keep `simple_vector` as the default retrieval strategy for now.
 - Preserve current dense-vector retrieval behavior by default.
 - Keep Qdrant-specific imports and SDK calls in `canar/app/retrieval/adapters/qdrant.py`.
 - Return `RetrievalHit` objects from retrieval code; do not pass Qdrant objects or Qdrant-shaped payload dicts into agents.
@@ -248,5 +289,5 @@ Rules:
 - No explicit LLM error/timeout handling or retry strategy.
 - Tool/function calling support is not implemented.
 - Retrieval result caching is not present.
-- Hybrid retrieval is not implemented; sparse retrieval/index availability belongs to the separate ingestion project.
+- Hybrid retrieval is not implemented; sparse retrieval/index availability belongs to the separate ingestion project and must match `FASTEMBED_SPARSE_MODEL` / `QDRANT_SPARSE_VECTOR_NAME`.
 - `.env.example` references `MISTRAL_API_BASE`, while the runtime config expects `LLM_API_BASE`.

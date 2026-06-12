@@ -4,7 +4,7 @@ from typing import Any
 
 from qdrant_client import QdrantClient, models
 
-from canar.app.retrieval.models import RetrievalHit
+from canar.app.retrieval.models import RetrievalHit, SparseVector
 
 
 class QdrantRetrievalAdapter:
@@ -31,6 +31,38 @@ class QdrantRetrievalAdapter:
             query_args["using"] = vector_name
 
         points = self.client.query_points(**query_args).points
+        return [self._to_hit(collection, point) for point in points]
+
+    def search_sparse(
+        self,
+        collection: str,
+        query_vector: SparseVector,
+        top_k: int,
+        source_filter: str | None = "utilitr",
+        vector_name: str | None = None,
+    ) -> list[RetrievalHit]:
+        query_args: dict[str, Any] = {
+            "collection_name": collection,
+            "query": models.SparseVector(
+                indices=query_vector.indices,
+                values=query_vector.values,
+            ),
+            "limit": top_k,
+            "with_payload": True,
+            "with_vectors": False,
+            "query_filter": self._source_filter(source_filter),
+        }
+        if vector_name is not None:
+            query_args["using"] = vector_name
+
+        try:
+            points = self.client.query_points(**query_args).points
+        except Exception as exc:
+            vector_hint = f" named {vector_name!r}" if vector_name else ""
+            raise RuntimeError(
+                f"Sparse retrieval failed for collection {collection!r}. "
+                f"Ensure the collection contains a compatible sparse vector{vector_hint}."
+            ) from exc
         return [self._to_hit(collection, point) for point in points]
 
     def _source_filter(self, source_filter: str | None) -> models.Filter | None:
