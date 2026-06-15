@@ -20,10 +20,7 @@ adapters/
 Responsibilities:
 
 - Creates a `QdrantClient`.
-- Performs dense vector search with `query_points`.
-- Applies an optional payload filter through `source_filter`.
-- Supports an optional `vector_name`.
-- Requests payloads but not vectors.
+- Performs a chosen search with `query_points`.
 - Converts Qdrant points into internal `RetrievalHit` objects.
 
 ## Method Behavior
