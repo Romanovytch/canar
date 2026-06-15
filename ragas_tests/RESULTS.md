@@ -5,6 +5,43 @@ One entry per meaningful run. Raw per-question CSVs live in `experiments/`
 
 ---
 
+## 2026-06-15 — End-to-end benchmark (real CanaR + AgoRa pipeline)
+
+First run through the **actual product code**: AgoRa-built collection +
+CanaR's modular `RetrievalService` + `r_helpdesk` prompt + `ChatClient`
+(not a replica). See `e2e/`.
+
+**Config:** 12 utilitR-grounded questions · collection `utilitr_v1`
+(AgoRa ingest, 337 chunks, bge-m3, 1024-dim) · generator `qwen3.5:9b`
+(the product LLM) · judge `qwen3.5:9b` · TOP_K 5 · metrics:
+retrieval_hit, Faithfulness, Answer Relevancy.
+
+| Metric | Score | Coverage |
+|---|:-:|---|
+| Retrieval hit rate | **100%** (12/12) | deterministic |
+| Answer relevancy | **0.77** mean | 9/12 (3 judge NaN) |
+| Faithfulness | 0.89 | **1/12** (11 judge timeouts) |
+
+**Notes**
+- Retrieval through CanaR's real fusion/filter/pruning still hits the target
+  fiche every time — the product retrieves as well as the standalone replica.
+- **Generation fix:** `qwen3.5` is a reasoning model; with the app's default
+  `max_tokens=2048` the thinking budget runs out and answers come back EMPTY
+  (`finish_reason=length`). Raising `GEN_MAX_TOKENS` to 8192 fixed 11/12 empty
+  answers and lifted relevancy from ~0.10 to 0.77. (Latent product bug: the
+  same 2048 default in `main.py` hits this wall.)
+- The `qwen3.5:9b` reasoning **judge** is the remaining weak link: 11/12
+  faithfulness timeouts and 3 relevancy NaN. A 2-question check with a
+  non-reasoning judge (`JUDGE_MODEL=qwen2.5:7b`) scored every job in seconds
+  (faithfulness 0.5–0.82, relevancy 0.91–0.95) — re-run the full 12 that way
+  for clean faithfulness coverage.
+- Faithfulness <1.0 is partly legitimate: CoachR adds SAS↔R analogies and
+  general R advice not present in the retrieved chunks, which grounding
+  penalizes.
+- Raw CSV: `e2e/results/results_20260615_1622.csv` (local).
+
+---
+
 ## 2026-06-11 — utilitR-grounded benchmark (utilitr_bench)
 
 **Config:** 12 questions derived from utilitR fiches (`utilitr_bench/datasets/utilitr_questions.csv`) ·
