@@ -5,7 +5,7 @@ A benchmark = a dataset of questions + a `pipeline` callable that answers one
 question the way the product (or a replica) does. Everything that repeats
 across benchmarks lives here:
 
-    - the per-question loop (retrieve -> generate -> deterministic retrieval_hit)
+    - the per-question loop (retrieve -> generate -> deterministic retrieval metrics)
     - the RAGAS evaluation call
     - assembling, printing and saving the timestamped results CSV
 
@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import retrieval_metrics
 from ragas import EvaluationDataset, evaluate
 from ragas.dataset_schema import SingleTurnSample
 from ragas.run_config import RunConfig
@@ -38,7 +39,8 @@ class PipelineOutput:
     """What one question yields when run through the pipeline under test."""
     answer: str
     contexts: list[str]                 # retrieved chunk texts (RAGAS context)
-    paths: list[str] = field(default_factory=list)  # source paths, for retrieval_hit
+    paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
+    retrieval_latency_s: float | None = None         # time spent retrieving (Latency metric)
 
 
 @dataclass
@@ -47,7 +49,7 @@ class DatasetSpec:
     path: Path
     question_col: str = "query"
     reference_col: str = "grading_notes"
-    # column holding the expected source file; None disables the retrieval_hit metric
+    # column holding the expected source file; None disables the retrieval metrics
     source_col: str | None = "source_fiche"
     limit: int | None = None            # None = all rows; int = quick subset
 
@@ -67,10 +69,15 @@ def run_benchmark(
     judge_embeddings,
     results_dir: Path,
     run_config: RunConfig | None = None,
+    retrieval_k: int | None = None,
 ) -> pd.DataFrame:
     """
-    Run `pipeline` over every question in `dataset`, score with RAGAS, and
-    save a timestamped CSV in `results_dir`. Returns the results DataFrame.
+    Run `pipeline` over every question in `dataset`, score with RAGAS *and* the
+    deterministic retrieval metrics, and save a timestamped CSV in
+    `results_dir`. Returns the results DataFrame.
+
+    retrieval_k : cutoff for the @k retrieval metrics; None = whatever the
+                  pipeline retrieved (CanaR's configured top_k).
     """
     df = pd.read_csv(dataset.path)
     if dataset.limit:
@@ -78,7 +85,7 @@ def run_benchmark(
     track_hits = dataset.source_col is not None
     print(f"{name}: {len(df)} questions\n")
 
-    samples, hits, all_paths = [], [], []
+    samples, retr_rows, all_paths, latencies = [], [], [], []
     for _, row in df.iterrows():
         question = row[dataset.question_col]
         print(f"Q: {question}")
@@ -88,12 +95,14 @@ def run_benchmark(
             print(f"   [pipeline failed: {e}]")
             out = PipelineOutput("", [], [])
 
+        latencies.append(out.retrieval_latency_s)
         if track_hits:
-            expected = row[dataset.source_col]
-            hit = retrieval_hit(expected, out.paths)
-            hits.append(hit)
+            # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
+            m = retrieval_metrics.compute(out.paths, row[dataset.source_col], k=retrieval_k)
+            retr_rows.append(m)
             all_paths.append("; ".join(out.paths))
-            print(f"   retrieval_hit={'YES' if hit else 'NO'} | A: {out.answer[:80]}...\n")
+            print(f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
+                  f"recall={m['recall']:.2f} | A: {out.answer[:60]}...\n")
         else:
             print(f"   A: {out.answer[:80]}...\n")
 
@@ -104,8 +113,10 @@ def run_benchmark(
             reference=row[dataset.reference_col],
         ))
 
-    if track_hits and hits:
-        print(f"Retrieval hit rate: {sum(hits)}/{len(hits)} = {sum(hits)/len(hits):.0%}\n")
+    if track_hits and retr_rows:
+        hit_rate = sum(r["hit_rate"] for r in retr_rows) / len(retr_rows)
+        mrr = sum(r["mrr"] for r in retr_rows) / len(retr_rows)
+        print(f"Retrieval — Hit Rate@k: {hit_rate:.0%} | MRR: {mrr:.3f}\n")
 
     print("Running RAGAS evaluation (slow on a local judge) ...\n")
     results = evaluate(
@@ -118,8 +129,13 @@ def run_benchmark(
 
     out_df = results.to_pandas()
     meta_cols = {"user_input", "retrieved_contexts", "response", "reference"}
+    # latency is always available (deterministic, no source column needed)
+    if any(latency is not None for latency in latencies):
+        out_df["retrieval_latency_s"] = latencies
     if track_hits:
-        out_df["retrieval_hit"] = hits
+        # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
+        for metric_name in retr_rows[0]:
+            out_df[metric_name] = [r[metric_name] for r in retr_rows]
         out_df["retrieved_paths"] = all_paths
         out_df[dataset.source_col] = df[dataset.source_col].values
         meta_cols |= {"retrieved_paths", dataset.source_col}

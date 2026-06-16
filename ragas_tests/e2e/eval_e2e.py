@@ -34,6 +34,7 @@ Run:
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -165,7 +166,10 @@ def ask_canar(question: str) -> PipelineOutput:
     #      search() embeds internally and applies the agent's profile
     #      (collections, top_k, source filter, score-threshold pruning) —
     #      the exact path main.py runs: retrieval.search(agent, user_input).
+    #      Timed for the Latency retrieval metric (embed + Qdrant round-trip).
+    t0 = time.perf_counter()
     citations = retrieval.search(AGENT, question)   # list[RetrievalHit]
+    retrieval_latency_s = time.perf_counter() - t0
 
     # 3. build the exact prompt the app sends (CoachR system prompt + [S1].. context)
     messages, _src_list = r_helpdesk.build_messages(question, citations)
@@ -185,6 +189,7 @@ def ask_canar(question: str) -> PipelineOutput:
         answer=answer,
         contexts=[hit.text for hit in citations],
         paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
+        retrieval_latency_s=retrieval_latency_s,
     )
 
 

@@ -8,7 +8,7 @@ AgoRa ingest ──> Qdrant `utilitr_v1` ──> CanaR (RetrievalService.search
                                           → r_helpdesk prompt → ChatClient)
                                                       │
                                                       ▼
-                                            RAGAS + retrieval_hit
+                                       RAGAS + retrieval metrics
 ```
 
 The script imports `canar.app.retrieval.service.RetrievalService` (Julien's
@@ -24,9 +24,26 @@ filter and score-threshold pruning come from the retrieval profile
 12 French questions whose references reproduce the official
 "Tâche concernée et recommandation" blocks of utilitR fiches.
 
-**Metrics:**
-- `retrieval_hit` — did CanaR retrieve the fiche the question targets? (deterministic, instant)
-- `faithfulness` / `answer_relevancy` — RAGAS, judged by the local LLM (slow, indicative)
+**Metrics** — two independent layers:
+
+*Retrieval (deterministic, instant — no LLM; in `retrieval_metrics.py`).*
+Score the ranked list of retrieved sources against the question's expected
+source. These are the roadmap's required retrieval metrics:
+- `hit_rate` — Hit Rate@k: is the expected source in the top-k?
+- `mrr` — Mean Reciprocal Rank: 1 / rank of the first relevant source.
+- `recall` — Recall@k: fraction of relevant sources retrieved.
+- `precision` — Precision@k, `ndcg` — nDCG@k (ranking quality).
+- `retrieval_latency_s` — Latency: embed + Qdrant round-trip per question.
+  (First question is slower — the embedding model loads on the first call.)
+
+*Answer quality (RAGAS, judged by the local LLM — slow, indicative).*
+- `faithfulness` — is the answer grounded in the retrieved context?
+- `answer_relevancy` — does the answer address the question?
+
+With the current dataset (one expected fiche per question) `recall` collapses
+to `hit_rate` and `precision` is bounded by `1/k`; they get richer with the
+end-June dataset (multiple relevant sources per question). `source_fiche` may
+list several sources separated by `;`.
 
 ## Run
 
