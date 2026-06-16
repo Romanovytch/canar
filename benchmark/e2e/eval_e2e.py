@@ -1,7 +1,7 @@
 """
 End-to-end RAGAS evaluation of the REAL CanaR + AgoRa pipeline.
 
-Unlike ../eval_rag.py and ../utilitr_bench/eval_utilitr.py (which replicate
+Unlike ../replica/eval_demo.py and ../replica/eval_utilitr.py (which replicate
 the RAG flow with their own code), this script imports and calls CanaR's
 actual modules, against the collection that AgoRa actually built:
 
@@ -27,7 +27,7 @@ carries the `source` field CanaR filters on; a hand-rolled ingest won't match):
                  --collection utilitr_v1 --dotenv-path .env --drop-collection
 
 Run:
-    cd /home/cereq/opt/pedro/canar/ragas_tests
+    cd /home/cereq/opt/pedro/canar/benchmark
     source .venv/bin/activate
     python e2e/eval_e2e.py
 """
@@ -42,18 +42,18 @@ from qdrant_client import QdrantClient
 from ragas.metrics import Faithfulness, ResponseRelevancy
 from ragas.run_config import RunConfig
 
-HERE = Path(__file__).parent                  # ragas_tests/e2e/
-RAGAS_TESTS = HERE.parent                      # ragas_tests/
+HERE = Path(__file__).parent                  # benchmark/e2e/
+BENCH_DIR = HERE.parent                      # benchmark/
 REPO_ROOT = HERE.parent.parent                # the canar repo root
 
 # Make the canar package importable without installing it into this venv.
 # (When this becomes a feature in dev, `pip install -e .` does the same job.)
 sys.path.insert(0, str(REPO_ROOT))
 # Make the shared benchmark harness importable.
-sys.path.insert(0, str(RAGAS_TESTS))
+sys.path.insert(0, str(BENCH_DIR / "harness"))
 
 # CanaR's AppConfig finds its .env by walking up from the *current working
-# directory*. Running from ragas_tests/ it would pick up ragas_tests/.env
+# directory*. Running from benchmark/ it would pick up benchmark/.env
 # (no QDRANT_COLLECTIONS) instead of canar/.env. Pre-loading the app's .env
 # explicitly makes the benchmark independent of where it's launched from.
 from dotenv import load_dotenv  # noqa: E402
@@ -78,7 +78,7 @@ cfg = AppConfig()
 cfg.validate()
 
 DATASET = DatasetSpec(
-    path=HERE.parent / "utilitr_bench" / "datasets" / "utilitr_questions.csv",
+    path=BENCH_DIR / "datasets" / "utilitr_questions.csv",
     # columns: query, grading_notes, source_fiche (defaults already match)
     limit=None,   # None = all 12; set an int for a quicker pass
 )

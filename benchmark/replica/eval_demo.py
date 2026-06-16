@@ -2,8 +2,9 @@
 RAG evaluation using real Qdrant retrieval + LLM generation.
 
 Run:
+    cd benchmark
     source .venv/bin/activate
-    python eval_rag.py
+    python replica/eval_demo.py
 """
 
 import os
@@ -14,9 +15,9 @@ import requests
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from qdrant_client import QdrantClient
-from ragas import evaluate, EvaluationDataset
+from ragas import EvaluationDataset, evaluate
 from ragas.dataset_schema import SingleTurnSample
-from ragas.metrics import Faithfulness, ResponseRelevancy, FactualCorrectness
+from ragas.metrics import Faithfulness, ResponseRelevancy
 from ragas.run_config import RunConfig
 
 load_dotenv()
@@ -58,7 +59,8 @@ embeddings = OpenAIEmbeddings(
     model=EMBED_MODEL,
     openai_api_base=EMBED_API_BASE,
     openai_api_key=EMBED_API_KEY,
-    check_embedding_ctx_length=False,  # send raw strings, not token-ID arrays (Ollama rejects tokens)
+    # send raw strings, not token-ID arrays (Ollama rejects tokens)
+    check_embedding_ctx_length=False,
 )
 
 qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
@@ -120,7 +122,7 @@ def generate(query: str, contexts: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 def main():
-    dataset_path = HERE / "datasets" / "test_dataset.csv"
+    dataset_path = HERE.parent / "datasets" / "demo.csv"
     df = pd.read_csv(dataset_path)
     df = df.head(N_QUESTIONS)
     print(f"Loaded {len(df)} questions from {dataset_path.name}\n")
@@ -156,12 +158,13 @@ def main():
     )
 
     result_df = results.to_pandas()
-    score_cols = [c for c in result_df.columns if c not in ("user_input", "retrieved_contexts", "response", "reference")]
+    score_cols = [c for c in result_df.columns
+                  if c not in ("user_input", "retrieved_contexts", "response", "reference")]
 
     print(result_df[["user_input"] + score_cols].to_string(index=False))
     print(f"\nMean scores:\n{result_df[score_cols].mean().to_string()}")
 
-    out = HERE / "experiments" / "results_rag.csv"
+    out = HERE / "results" / "results_demo.csv"
     out.parent.mkdir(exist_ok=True)
     result_df.to_csv(out, index=False)
     print(f"\nFull results saved to {out}")

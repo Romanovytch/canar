@@ -1,7 +1,7 @@
 """
 utilitR-grounded RAG benchmark.
 
-Same architecture as ../eval_rag.py (Qdrant retrieve -> Ollama generate ->
+Same architecture as ./eval_demo.py (Qdrant retrieve -> Ollama generate ->
 Ragas judge), but the dataset is derived from utilitR itself: each question
 targets the official "Tache concernee et recommandation" block of one fiche,
 and the reference reproduces that recommendation.
@@ -10,9 +10,9 @@ Extra: a pure-retrieval metric (retrieval_hit) checking whether the expected
 source fiche appears in the top-k retrieved chunks — no LLM judging involved.
 
 Run:
-    cd ragas_tests
+    cd benchmark
     source .venv/bin/activate
-    python utilitr_bench/eval_utilitr.py
+    python replica/eval_utilitr.py
 """
 
 import os
@@ -24,13 +24,13 @@ import requests
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from qdrant_client import QdrantClient
-from ragas import evaluate, EvaluationDataset
+from ragas import EvaluationDataset, evaluate
 from ragas.dataset_schema import SingleTurnSample
 from ragas.metrics import Faithfulness, ResponseRelevancy
 from ragas.run_config import RunConfig
 
-HERE = Path(__file__).parent          # utilitr_bench/
-load_dotenv(HERE.parent / ".env")     # reuse ragas_tests/.env
+HERE = Path(__file__).parent          # benchmark/replica/
+load_dotenv(HERE.parent / ".env")     # reuse benchmark/.env
 
 # ---------------------------------------------------------------------------
 # Config (knobs)
@@ -124,10 +124,11 @@ def generate(query: str, contexts: list[str]) -> str:
 
 
 def main():
-    df = pd.read_csv(HERE / "datasets" / "utilitr_questions.csv")
+    df = pd.read_csv(HERE.parent / "datasets" / "utilitr_questions.csv")
     if N_QUESTIONS:
         df = df.head(N_QUESTIONS)
-    print(f"Benchmark: {len(df)} utilitR-grounded questions | collection '{COLLECTION}' | top-{TOP_K}\n")
+    print(f"Benchmark: {len(df)} utilitR-grounded questions | "
+          f"collection '{COLLECTION}' | top-{TOP_K}\n")
 
     samples, hits, paths_per_q = [], [], []
     for _, row in df.iterrows():

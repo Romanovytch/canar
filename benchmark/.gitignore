@@ -6,5 +6,5 @@ __pycache__/
 # Local credentials (keep .env.example tracked)
 .env
 
-# Evaluation outputs
-experiments/*.csv
+# Evaluation outputs (each benchmark writes to its own results/)
+**/results/*.csv

@@ -20,13 +20,13 @@ comes from `canar/.env`, the same file the app reads. `top_k`, the source
 filter and score-threshold pruning come from the retrieval profile
 (`canar/app/retrieval/profiles.py`).
 
-**Dataset:** reuses `../utilitr_bench/datasets/utilitr_questions.csv` —
+**Dataset:** reuses `../datasets/utilitr_questions.csv` —
 12 French questions whose references reproduce the official
 "Tâche concernée et recommandation" blocks of utilitR fiches.
 
 **Metrics** — two independent layers:
 
-*Retrieval (deterministic, instant — no LLM; in `retrieval_metrics.py`).*
+*Retrieval (deterministic, instant — no LLM; in `../harness/retrieval_metrics.py`).*
 Score the ranked list of retrieved sources against the question's expected
 source. These are the roadmap's required retrieval metrics:
 - `hit_rate` — Hit Rate@k: is the expected source in the top-k?
@@ -54,7 +54,7 @@ agora-ingest --sources-config-path sources.yaml --source utilitr \
              --collection utilitr_v1 --dotenv-path .env --drop-collection
 
 # 2. the benchmark — use a fast, non-reasoning judge to avoid timeouts
-cd /home/cereq/opt/pedro/canar/ragas_tests && source .venv/bin/activate
+cd /home/cereq/opt/pedro/canar/benchmark && source .venv/bin/activate
 JUDGE_MODEL=qwen2.5:7b python e2e/eval_e2e.py
 ```
 
@@ -78,10 +78,10 @@ profile, so the benchmark always matches the app's real settings.
 
 | | pipeline code | collection | what a bad score means |
 |---|---|---|---|
-| `eval_rag.py` | standalone replica | `utilitr` | methodology smoke test |
-| `utilitr_bench/` | standalone replica | `utilitr` | corpus/embedding issues |
+| `replica/eval_demo.py` | standalone replica | `utilitr` | methodology smoke test |
+| `replica/eval_utilitr.py` | standalone replica | `utilitr` | corpus/embedding issues |
 | `e2e/` (this) | **CanaR's real code** | **AgoRa's `utilitr_v1`** | a product problem worth a ticket |
 
-Differences between `utilitr_bench` and `e2e` scores localize the cause:
-same dataset, same corpus — what changes is chunking (AgoRa's vs ours) and
-retrieval logic (CanaR's fusion/filter/pruning vs plain top-k).
+Differences between `replica/eval_utilitr.py` and `e2e` scores localize the
+cause: same dataset, same corpus — what changes is chunking (AgoRa's vs ours)
+and retrieval logic (CanaR's fusion/filter/pruning vs plain top-k).

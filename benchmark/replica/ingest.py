@@ -15,7 +15,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 load_dotenv()
 
@@ -131,7 +131,7 @@ def main():
         prefix = "search_document: " if "nomic" in EMBED_MODEL else ""
         texts = [prefix + c["text"] for c in batch]
         vectors = embed_batch(texts)
-        for chunk, vector in zip(batch, vectors):
+        for chunk, vector in zip(batch, vectors, strict=False):
             points.append(
                 PointStruct(
                     id=str(uuid.uuid4()),
