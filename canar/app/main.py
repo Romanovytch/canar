@@ -8,6 +8,7 @@ from canar.app.api.retrieval import search_qdrant
 from canar.app.agents import sas_to_r, r_helpdesk, assistant_gene
 from canar.app.ui.sidebar import sidebar
 from canar.app.ui.chat import render_messages, stream_answer
+from canar.app.utils import estimate_tokens_and_cost
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -25,7 +26,7 @@ def show_auth():
     tab_login, tab_signup = st.tabs(["Se connecter", "Créer un compte"])
 
     with tab_login:
-        u = st.text_input("IDEP", key="login_u")
+        u = st.text_input("Nom d’utilisateur", key="login_u")
         p = st.text_input("Mot de passe", type="password", key="login_p")
         if st.button("Connexion"):
             uid = db.verify_user(u, p)
@@ -211,7 +212,9 @@ if user_input:
     if st.session_state["agent"] == "sas_to_r":
         messages = sas_to_r.build_messages(user_input, sas_code_uploaded)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-        _ = stream_answer(db, USER_ID, conv_id, gen)
+        answer = stream_answer(db, USER_ID, conv_id, gen)
+        token_number, cost = estimate_tokens_and_cost(answer)
+        st.markdown(f"- Nombre de tokens estimé :  {token_number}, Coût: {cost}€")
 
     elif st.session_state["agent"] == "assistant_gene":
         qvec = embed.embed_query(user_input)
@@ -222,6 +225,8 @@ if user_input:
         messages, src_list = assistant_gene.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
         answer = stream_answer(db, USER_ID, conv_id, gen)
+        token_number, cost = estimate_tokens_and_cost(answer)
+        st.markdown(f"- Nombre de tokens estimé :  {token_number}, Coût: {cost}€")
 
     else:  # r_helpdesk
         qvec = embed.embed_query(user_input)
@@ -232,6 +237,8 @@ if user_input:
         messages, src_list = r_helpdesk.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
         answer = stream_answer(db, USER_ID, conv_id, gen)
+        token_number, cost = estimate_tokens_and_cost(answer)
+        st.markdown(f"- Nombre de tokens estimé :  {token_number}, Coût: {cost}€")
 
         # Citations panel
         with st.expander("Sources"):
