@@ -61,9 +61,11 @@ Create a `.env` file at the root of the project from `.env.example`.
 | `EMBED_API_BASE`     | Embeddings API base URL               | `https://api.mistral.ai/v1`                                                                         |
 | `EMBED_API_KEY`      | Embeddings API key                    | `sk-...`                                                                                            |
 | `EMBED_MODEL`        | Embeddings model name                 | `mistral-embed`                                                                                     |
+| `FASTEMBED_SPARSE_MODEL` | Optional sparse retrieval model   | `Qdrant/bm25`                                                                                       |
 | `QDRANT_URL`         | Qdrant URL                            | `http://localhost:6333` (host) or `http://qdrant:6333` (docker)                                     |
 | `QDRANT_API_KEY`     | Qdrant API key (if enabled)           | `...`                                                                                               |
 | `QDRANT_COLLECTIONS` | Allowed collections (comma-separated) | `col1,col2`                                                                                         |
+| `QDRANT_SPARSE_VECTOR_NAME` | Optional Qdrant named sparse vector | leave empty for default sparse vector                                                        |
 | `DB_POSTGRES_URL`    | Postgres URL (SQLAlchemy/psycopg)     | `postgresql+psycopg://canar:canar@localhost:5432/canar` (host) or `...@postgres:5432/...` (docker) |
 
 ### 3) Install and run CanaR
@@ -113,12 +115,14 @@ LLM_MODEL=model_name
 EMBED_API_BASE=https://url_embed/v1
 EMBED_API_KEY=
 EMBED_MODEL=model_name
+FASTEMBED_SPARSE_MODEL=Qdrant/bm25
 
 # Qdrant
 # QDRANT_URL=http://qdrant:6333        # if CanaR runs in Docker
 QDRANT_URL=http://localhost:6333       # if CanaR runs on the host
 QDRANT_API_KEY=
 QDRANT_COLLECTIONS=collection1_v1,collection2_v1
+QDRANT_SPARSE_VECTOR_NAME=
 
 # Postgres
 # DB_POSTGRES_URL=postgresql+psycopg://canar:canar@postgres:5432/canar   # docker

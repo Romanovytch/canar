@@ -29,13 +29,14 @@ If those files conflict with this file, prefer this order:
 - Retrieval is modular and strategy-based under `canar/app/retrieval/`.
 - `canar/app/main.py` should call `RetrievalService.search(agent, query)` for retrieval; it should not embed queries or call Qdrant directly.
 - Retrieval profile selection is by agent in `canar/app/retrieval/profiles.py`.
-- The only implemented profile/strategy is `simple_vector`, mapped to `r_helpdesk`.
+- The default implemented profile/strategy is `simple_vector`, mapped to `r_helpdesk`.
+- Optional sparse retrieval lives in the separate `simple_sparse` profile/strategy and is not mapped to an agent by default.
 - `sas_to_r` has no retrieval profile.
 - `simple_vector` must preserve the current dense-vector behavior: configured Qdrant collections, `top_k=5`, `source_filter="utilitr"`, per-collection min-max normalization, `score_threshold=0.35`, and top-3 fallback.
 - Qdrant-specific imports, filters, query arguments, named-vector selection, and payload conversion belong in `canar/app/retrieval/adapters/qdrant.py`.
 - Strategies should return project-owned `RetrievalHit` objects from `canar/app/retrieval/models.py`; agents and UI code must not depend on Qdrant result objects or Qdrant-shaped payload dictionaries.
 - `canar/app/api/retrieval.py::search_qdrant` is a backward-compatible wrapper only. New code should use the retrieval service.
-- Hybrid retrieval is intentionally not implemented in this repository yet. Ingestion and sparse retrieval support are out of scope unless explicitly requested.
+- Hybrid retrieval is intentionally not implemented in this repository yet. Sparse retrieval assumes compatible sparse vectors already exist from the ingestion project.
 
 ## Dependency isolation
 

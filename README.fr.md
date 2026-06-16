@@ -60,9 +60,11 @@ Crée un fichier `.env` à la racine du projet à partir de `.env.example`.
 | `EMBED_API_BASE`     | URL de l’API embeddings                        | `https://api.mistral.ai/v1`                                                                        |
 | `EMBED_API_KEY`      | Clé API embeddings                             | `sk-...`                                                                                           |
 | `EMBED_MODEL`        | Nom du modèle d’embeddings                     | `mistral-embed`                                                                                    |
+| `FASTEMBED_SPARSE_MODEL` | Modèle sparse optionnel                   | `Qdrant/bm25`                                                                                      |
 | `QDRANT_URL`         | URL de Qdrant                                  | `http://localhost:6333` (host) ou `http://qdrant:6333` (docker)                                    |
 | `QDRANT_API_KEY`     | Clé API Qdrant (si activée)                    | `...`                                                                                              |
 | `QDRANT_COLLECTIONS` | Collections autorisées (séparées par virgules) | `col1,col2`                                                                                        |
+| `QDRANT_SPARSE_VECTOR_NAME` | Nom optionnel du vecteur sparse Qdrant | laisser vide pour le vecteur sparse par défaut                                                     |
 | `DB_POSTGRES_URL`    | URL Postgres (SQLAlchemy/psycopg)              | `postgresql+psycopg://canar:canar@localhost:5432/canar` (host) ou `...@postgres:5432/...` (docker) |
 
 ### 3) Installer et lancer CanaR
@@ -112,12 +114,14 @@ LLM_MODEL=nom_model
 EMBED_API_BASE=https://url_embed/v1
 EMBED_API_KEY=
 EMBED_MODEL=nom_model
+FASTEMBED_SPARSE_MODEL=Qdrant/bm25
 
 # Qdrant
 # QDRANT_URL=http://qdrant:6333        # si CanaR tourne dans Docker
 QDRANT_URL=http://localhost:6333       # si CanaR tourne sur l'hôte
 QDRANT_API_KEY=
 QDRANT_COLLECTIONS=collection1_v1,collection2_v1
+QDRANT_SPARSE_VECTOR_NAME=
 
 # Postgres
 # DB_POSTGRES_URL=postgresql+psycopg://canar:canar@postgres:5432/canar   # docker

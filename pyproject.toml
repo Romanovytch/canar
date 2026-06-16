@@ -8,6 +8,7 @@ readme = "README.md"
 dependencies = [
   "streamlit>=1.35",
   "python-dotenv>=1.0.1",
+  "fastembed>=0.8.0",
   "openai>=1.40.0",
   "qdrant-client>=1.10.0",
   "sqlmodel>=0.0.21",

@@ -5,6 +5,12 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class SparseVector:
+    indices: list[int]
+    values: list[float]
+
+
+@dataclass(frozen=True)
 class RetrievalProfile:
     name: str
     strategy: str
@@ -21,6 +27,7 @@ class RetrievalQuery:
     text: str
     profile_name: str
     dense_vector: list[float] | None = None
+    sparse_vector: SparseVector | None = None
 
 
 @dataclass(frozen=True)
