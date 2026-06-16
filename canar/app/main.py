@@ -8,6 +8,7 @@ from canar.app.api.retrieval import search_qdrant
 from canar.app.agents import sas_to_r, r_helpdesk, assistant_gene
 from canar.app.ui.sidebar import sidebar
 from canar.app.ui.chat import render_messages, stream_answer
+from canar.app.agents.history import MAX_HISTORY_MESSAGES
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -197,9 +198,11 @@ if st.session_state["agent"] == "sas_to_r":
     uploaded = st.file_uploader("Uploader un fichier .sas (optionnel)", type=["sas"])
     if uploaded is not None:
         sas_code_uploaded = uploaded.read().decode("utf-8", errors="ignore")
-
 user_input = st.chat_input("Pose ta question (ou colle ton code)…")
 if user_input:
+    # 0) récupérer les messages précédents AVANT d'ajouter le nouveau message utilisateur
+    previous_messages = db.get_messages(USER_ID, conv_id)[-MAX_HISTORY_MESSAGES:]
+
     # 1) show the user message immediately in the chat
     with st.chat_message("user"):
         st.markdown(user_input)
@@ -216,8 +219,12 @@ if user_input:
     elif st.session_state["agent"] == "assistant_gene":
         qvec = embed.embed_query(user_input)
         citations = search_qdrant(
-            cfg.qdrant_url, cfg.qdrant_api_key, list(cfg.qdrant_collections),
-            qvec, top_k_per_collection=10, source_filter=None
+            cfg.qdrant_url,
+            cfg.qdrant_api_key,
+            list(cfg.qdrant_collections),
+            qvec,
+            top_k_per_collection=10,
+            source_filter=None,
         )
         messages, src_list = assistant_gene.build_messages(user_input, citations)
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
@@ -226,17 +233,32 @@ if user_input:
     else:  # r_helpdesk
         qvec = embed.embed_query(user_input)
         citations = search_qdrant(
-            cfg.qdrant_url, cfg.qdrant_api_key, list(cfg.qdrant_collections),
-            qvec, top_k_per_collection=5, source_filter="utilitr"
+            cfg.qdrant_url,
+            cfg.qdrant_api_key,
+            list(cfg.qdrant_collections),
+            qvec,
+            top_k_per_collection=5,
+            source_filter="utilitr",
         )
-        messages, src_list = r_helpdesk.build_messages(user_input, citations)
+
+        messages, src_list = r_helpdesk.build_messages(
+            query=user_input,
+            citations=citations,
+            history_messages=previous_messages,
+        )
+
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
         answer = stream_answer(db, USER_ID, conv_id, gen)
 
         # Citations panel
         with st.expander("Sources"):
             for src in src_list:
-                st.markdown(f"- **[{src['label']}]** {src['section']}  \n  {src['url']}  \n  _({src['collection']})_")
+                st.markdown(
+                    f"- **[{src['label']}]** {src['section']}  \n"
+                    f"  {src['url']}  \n"
+                    f"  _({src['collection']})_"
+                )
+
 
 # Footer / export for SAS→R
 if st.session_state["agent"] == "sas_to_r":

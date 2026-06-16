@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List, Dict
+from canar.app.agents.history import format_history_messages
 
 SYSTEM_PROMPT_FR = """
 Tu es “CoachR”, un formateur R très pédagogue pour un public venant majoritairement de SAS et peu familier des langages de programmation.
@@ -42,12 +43,56 @@ def assemble_context(citations: List[Dict]) -> tuple[str, list[dict]]:
     return context, srcs
 
 
-def build_messages(query: str, citations: List[Dict]) -> tuple[list[dict], list[dict]]:
+def build_messages(query: str, citations: List[Dict], history_messages=None) -> tuple[list[dict], list[dict]]:
     context_text, src_list = assemble_context(citations)
-    user_msg = f"Question: {query}\n\nContexte (extraits documentaires):\n{context_text}\n\n" \
-               f"Consigne: Utilise uniquement les extraits pertinents. Cite [S1], [S2] si utilisés."
+    history = format_history_messages(history_messages)
+    user_msg = (
+        "Historique récent de la conversation :\n"
+        f"{history}\n\n"
+        "Question actuelle :\n"
+        f"{query}\n\n"
+        "Contexte (extraits documentaires) :\n"
+        f"{context_text}\n\n"
+        "Consigne : Utilise uniquement les extraits pertinents. "
+        "Cite [S1], [S2] si utilisés."
+    )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT_FR},
         {"role": "user", "content": user_msg}
     ]
     return messages, src_list
+
+if __name__ == "__main__":
+    fake_history = [
+        {
+            "role": "user",
+            "content": "Comment faire une jointure avec dplyr ?",
+        },
+        {
+            "role": "assistant",
+            "content": "Tu peux utiliser left_join(), inner_join() ou full_join().",
+        },
+    ]
+
+    fake_citations = [
+        {
+            "payload": {
+                "section": "Jointures avec dplyr",
+                "text": "Le package dplyr propose plusieurs fonctions de jointure comme left_join(), inner_join(), right_join() et full_join().",
+                "url": "https://example.org/dplyr-joins",
+            },
+            "collection": "utilitr_v1",
+        }
+    ]
+
+    messages, src_list = build_messages(
+        query="Et comment faire la même chose avec data.table ?",
+        citations=fake_citations,
+        history_messages=fake_history,
+    )
+
+    print("=== Message envoyé au LLM ===")
+    print(messages[1]["content"])
+
+    print("\n=== Sources UI ===")
+    print(src_list)
