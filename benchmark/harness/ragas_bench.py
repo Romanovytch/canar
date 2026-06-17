@@ -70,6 +70,8 @@ def run_benchmark(
     results_dir: Path,
     run_config: RunConfig | None = None,
     retrieval_k: int | None = None,
+    tag: dict | None = None,
+    file_label: str | None = None,
 ) -> pd.DataFrame:
     """
     Run `pipeline` over every question in `dataset`, score with RAGAS *and* the
@@ -78,6 +80,9 @@ def run_benchmark(
 
     retrieval_k : cutoff for the @k retrieval metrics; None = whatever the
                   pipeline retrieved (CanaR's configured top_k).
+    tag         : constant columns added to every row (e.g. {"profile": "..."}),
+                  so several runs can be concatenated and compared.
+    file_label  : prefix for the output CSV name (e.g. the profile name).
     """
     df = pd.read_csv(dataset.path)
     if dataset.limit:
@@ -129,6 +134,10 @@ def run_benchmark(
 
     out_df = results.to_pandas()
     meta_cols = {"user_input", "retrieved_contexts", "response", "reference"}
+    if tag:  # constant columns (e.g. profile name) — kept out of the score means
+        for key, value in tag.items():
+            out_df[key] = value
+        meta_cols |= set(tag)
     # latency is always available (deterministic, no source column needed)
     if any(latency is not None for latency in latencies):
         out_df["retrieval_latency_s"] = latencies
@@ -145,8 +154,9 @@ def run_benchmark(
     print(f"\nMean scores:\n{out_df[score_cols].mean(numeric_only=True).to_string()}")
 
     results_dir.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    out_path = results_dir / f"results_{stamp}.csv"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    label = f"{file_label}_" if file_label else ""
+    out_path = results_dir / f"results_{label}{stamp}.csv"
     out_df.to_csv(out_path, index=False)
     print(f"\nFull results saved to {out_path}")
     return out_df

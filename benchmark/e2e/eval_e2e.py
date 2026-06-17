@@ -17,7 +17,9 @@ using Julien's modular retrieval (canar/app/retrieval/):
     messages = r_helpdesk.build_messages(q, cits)  | same call, same CoachR prompt
     chat.stream_chat(messages)                     | same call, stream joined
 
-So a score here measures the product, not a replica.
+So a score here measures the product, not a replica. The retrieval profiles to
+run (top_k, score_threshold, ...) come from benchmark/config.yaml; the dataset
+is run once per profile so strategies can be compared side by side.
 
 Prerequisite — the collection must have been built by AgoRa (its payload
 carries the `source` field CanaR filters on; a hand-rolled ingest won't match):
@@ -32,11 +34,13 @@ Run:
     python e2e/eval_e2e.py
 """
 
+import dataclasses
 import os
 import sys
 import time
 from pathlib import Path
 
+import pandas as pd
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from qdrant_client import QdrantClient
 from ragas.metrics import Faithfulness, ResponseRelevancy
@@ -62,46 +66,48 @@ load_dotenv(REPO_ROOT / ".env", override=True)
 
 # CanaR's real modules — the exact code the Streamlit app runs.
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
+from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 
 from canar.app.agents import r_helpdesk  # noqa: E402
 from canar.app.api.embed_client import EmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
-from canar.app.retrieval.service import RetrievalService  # noqa: E402
+from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter  # noqa: E402
+from canar.app.retrieval.models import RetrievalProfile, RetrievalQuery  # noqa: E402
+from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Config — single source of truth is canar/.env, exactly like the app.
+# Config — product settings from canar/.env; benchmark settings from config.yaml.
 # ---------------------------------------------------------------------------
 
 cfg = AppConfig()
 cfg.validate()
 
+BENCH = load_config(BENCH_DIR / "config.yaml")
+
 DATASET = DatasetSpec(
-    path=BENCH_DIR / "datasets" / "utilitr_questions.csv",
-    # columns: query, grading_notes, source_fiche (defaults already match)
-    limit=None,   # None = all 12; set an int for a quicker pass
+    path=BENCH_DIR / BENCH.dataset,   # columns: query, grading_notes, source_fiche
+    limit=BENCH.limit,                # null in YAML = all questions
 )
-AGENT = "r_helpdesk"  # which agent profile RetrievalService exercises (main.py's RAG agent)
-# top_k / source_filter / score-threshold pruning now live in the retrieval
-# profile (canar/app/retrieval/profiles.py), exactly as the app uses them.
 
-# qwen3.5 is a *reasoning* model: it spends a large hidden token budget
-# "thinking" before emitting visible content. With the app's default
-# max_tokens=2048 the budget runs out mid-thought and the answer comes back
-# EMPTY (finish_reason="length", 0 chars) — which silently tanks every score.
-# A generous cap lets the model think *and* answer. (Override via env.)
-GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", "8192"))
+# Generation budget. qwen3.5 is a *reasoning* model: it spends a hidden token
+# budget "thinking" before answering, so the app's default max_tokens=2048 runs
+# out mid-thought and returns EMPTY answers. Keep high. Env overrides YAML.
+GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", BENCH.gen_max_tokens))
 
-# The RAGAS judge can be a different (faster / stronger) model than the product.
-# Defaults to the product LLM; set JUDGE_MODEL to e.g. a non-reasoning model
-# (qwen2.5:7b) to cut the judge timeouts seen with the reasoning 9B.
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", cfg.llm_model)
+# RAGAS judge — may differ from the product LLM. A non-reasoning model
+# (qwen2.5:7b) avoids the timeouts of the reasoning 9B. Priority: env > YAML > product.
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_model
 
-# CanaR's clients + retrieval service, built from the same config the app uses
+# CanaR clients (product code). Retrieval is built per profile in main() so we
+# can sweep strategies; the Qdrant adapter is shared across profiles.
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
-retrieval = RetrievalService.from_config(cfg, embed)  # Julien's modular retrieval, same as main.py
+qdrant_adapter = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
+
+# strategy name -> CanaR strategy class (extend as the product adds strategies)
+STRATEGIES = {"simple_vector": SimpleVectorStrategy}
 
 # RAGAS judge — reuses the same local LLM/embeddings endpoints.
 # (LangChain wrappers because RAGAS expects them; this is eval-side only,
@@ -155,58 +161,98 @@ def preflight() -> None:
     print(f"Preflight OK — collections {list(cfg.qdrant_collections)} ready at {cfg.qdrant_url}\n")
 
 
-def ask_canar(question: str) -> PipelineOutput:
+def build_searcher(spec):
     """
-    The pipeline under test: one full CanaR turn, exactly as main.py does it
-    for the r_helpdesk agent (Julien's modular retrieval: RetrievalService ->
-    r_helpdesk -> ChatClient). This is the only product-specific glue; the
-    benchmark loop/scoring/saving lives in ragas_bench.run_benchmark.
+    Build CanaR's real retrieval for one config profile. This replicates exactly
+    what RetrievalService.search does internally (embed -> strategy.search), but
+    lets the benchmark drive the profile's hyperparameters from config.yaml so
+    strategies can be compared. `product_default` mirrors the shipped profile.
     """
-    # 1+2. embed + retrieve through the same RetrievalService the app builds.
-    #      search() embeds internally and applies the agent's profile
-    #      (collections, top_k, source filter, score-threshold pruning) —
-    #      the exact path main.py runs: retrieval.search(agent, user_input).
-    #      Timed for the Latency retrieval metric (embed + Qdrant round-trip).
-    t0 = time.perf_counter()
-    citations = retrieval.search(AGENT, question)   # list[RetrievalHit]
-    retrieval_latency_s = time.perf_counter() - t0
-
-    # 3. build the exact prompt the app sends (CoachR system prompt + [S1].. context)
-    messages, _src_list = r_helpdesk.build_messages(question, citations)
-
-    # 4. generate with CanaR's ChatClient. The app streams to the UI; here we
-    #    join the stream. temperature=0.0 for reproducible benchmark runs
-    #    (the app's default is 0.2). max_tokens generous so the reasoning model
-    #    finishes thinking AND answers (see GEN_MAX_TOKENS note above).
-    answer = "".join(
-        chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
+    valid = {f.name for f in dataclasses.fields(RetrievalProfile)}
+    params = {k: v for k, v in spec.params.items() if k in valid}
+    profile = RetrievalProfile(
+        name=spec.name,
+        strategy=spec.strategy,
+        collections=tuple(cfg.qdrant_collections),
+        **params,
     )
+    strat_cls = STRATEGIES.get(spec.strategy)
+    if strat_cls is None:
+        sys.exit(f"Strategy {spec.strategy!r} not implemented in the benchmark yet "
+                 f"(available: {list(STRATEGIES)}).")
+    strategy = strat_cls(profile, qdrant_adapter)
 
-    # RetrievalHit is a dataclass; the full Qdrant payload lives in .metadata.
-    # AgoRa stores the fiche path under "file_path" (the standalone ingest used
-    # "path") — this is what retrieval_hit matches against source_fiche.
-    return PipelineOutput(
-        answer=answer,
-        contexts=[hit.text for hit in citations],
-        paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
-        retrieval_latency_s=retrieval_latency_s,
-    )
+    def search(question: str):
+        qvec = embed.embed_query(question)
+        return strategy.search(
+            RetrievalQuery(text=question, profile_name=profile.name, dense_vector=qvec)
+        )
+
+    return search
+
+
+def make_pipeline(search):
+    """Wrap one profile's retrieval into a benchmark pipeline = one product turn."""
+    def ask_canar(question: str) -> PipelineOutput:
+        # retrieve (timed for the Latency metric)
+        t0 = time.perf_counter()
+        citations = search(question)              # list[RetrievalHit]
+        retrieval_latency_s = time.perf_counter() - t0
+
+        # build the exact prompt the app sends (CoachR system prompt + [S1].. context)
+        messages, _src_list = r_helpdesk.build_messages(question, citations)
+
+        # generate with CanaR's ChatClient (the app streams; we join the stream).
+        # max_tokens generous so the reasoning model finishes thinking AND answers.
+        answer = "".join(
+            chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
+        )
+
+        # AgoRa stores the fiche path under "file_path" in the chunk payload
+        # (RetrievalHit.metadata); that's what the retrieval metrics match on.
+        return PipelineOutput(
+            answer=answer,
+            contexts=[hit.text for hit in citations],
+            paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
+            retrieval_latency_s=retrieval_latency_s,
+        )
+
+    return ask_canar
 
 
 def main() -> None:
     preflight()
-    run_benchmark(
-        name="E2E benchmark (real CanaR + AgoRa pipeline)",
-        dataset=DATASET,
-        pipeline=ask_canar,
-        metrics=[Faithfulness(), ResponseRelevancy()],
-        judge_llm=judge_llm,
-        judge_embeddings=judge_embeddings,
-        results_dir=HERE / "results",
-        # local judge is slow: give each job room, and run a few in parallel
-        # (Ollama serves them sequentially but overlaps prompt processing).
-        run_config=RunConfig(timeout=900, max_workers=3),
-    )
+    print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}\n")
+
+    summaries = []
+    for spec in BENCH.profiles:
+        df = run_benchmark(
+            name=f"E2E [{spec.name}] (real CanaR + AgoRa pipeline)",
+            dataset=DATASET,
+            pipeline=make_pipeline(build_searcher(spec)),
+            metrics=[Faithfulness(), ResponseRelevancy()],
+            judge_llm=judge_llm,
+            judge_embeddings=judge_embeddings,
+            results_dir=HERE / "results",
+            # local judge is slow: give each job room, and run a few in parallel
+            # (Ollama serves them sequentially but overlaps prompt processing).
+            run_config=RunConfig(timeout=900, max_workers=3),
+            tag={"profile": spec.name},
+            file_label=spec.name,
+        )
+        summaries.append((spec.name, df))
+
+    # Side-by-side comparison — the point of sweeping profiles.
+    if len(summaries) > 1:
+        cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
+                "retrieval_latency_s", "faithfulness", "answer_relevancy"]
+        rows = [
+            {"profile": name,
+             **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
+            for name, df in summaries
+        ]
+        print("\n=== Profile comparison (means) ===")
+        print(pd.DataFrame(rows).to_string(index=False))
 
 
 if __name__ == "__main__":
