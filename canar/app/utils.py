@@ -1,3 +1,2 @@
-def estimate_tokens_and_cost(answer):
-    number_of_token = len(answer) / 4
-    return number_of_token, round(number_of_token * 0.002, 2)
+def estimate_cost(token_number):
+    return round(token_number * 0.00001, 5)

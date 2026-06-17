@@ -14,9 +14,11 @@ def stream_answer(db: DB, user_id: int, conv_id: int, generator):
     with st.chat_message("assistant"):
         ph = st.empty()
         acc = ""
+        token_number = 0
         for token in generator:
             acc += token
+            token_number += 1
             ph.markdown(acc)
         full_text = acc
     db.add_message(user_id, conv_id, "assistant", full_text)
-    return full_text
+    return full_text, token_number
