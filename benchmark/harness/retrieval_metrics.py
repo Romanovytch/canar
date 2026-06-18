@@ -30,6 +30,23 @@ def make_is_relevant(expected: str):
     return is_relevant, len(targets)
 
 
+def _unique_fiches(ranked_paths: list[str]) -> list[str]:
+    """Collapse chunks of the same fiche to one entry, keeping the best rank.
+
+    The pipeline returns one path per retrieved chunk, so a relevant fiche shows
+    up several times. Scoring documents (not chunks) is what keeps recall, nDCG
+    and precision in [0, 1] — otherwise a fiche retrieved as N chunks counts as
+    N relevant hits and recall can exceed 1.
+    """
+    seen, unique = set(), []
+    for path in ranked_paths:
+        key = Path(path).name or path
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
 def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dict[str, float]:
     """
     Compute retrieval metrics for one question.
@@ -39,6 +56,7 @@ def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dic
     k            : cutoff for @k metrics; None = use everything retrieved
     """
     is_relevant, n_relevant = make_is_relevant(expected)
+    ranked_paths = _unique_fiches(ranked_paths)   # score documents, not chunks
     k = k or len(ranked_paths)
     top_k = ranked_paths[:k]
 
