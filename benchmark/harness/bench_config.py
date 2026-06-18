@@ -35,6 +35,9 @@ class BenchConfig:
     judge_model: str | None = None     # None = fall back to the product LLM
     gen_max_tokens: int = 8192
     profiles: list[ProfileSpec] = field(default_factory=list)
+    # Expected environment (embed_model, collection). The caller's preflight
+    # checks canar/.env against these so results are comparable across machines.
+    environment: dict = field(default_factory=dict)
 
 
 def load_config(path: str | Path) -> BenchConfig:
@@ -55,4 +58,5 @@ def load_config(path: str | Path) -> BenchConfig:
         judge_model=run.get("judge_model"),
         gen_max_tokens=run.get("gen_max_tokens", 8192),
         profiles=profiles,
+        environment=data.get("environment", {}) or {},
     )

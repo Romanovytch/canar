@@ -17,6 +17,13 @@ run:
   judge_model: qwen2.5:7b      # non-reasoning judge (fast, no timeouts); null = product LLM
   gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers
 
+# Expected environment. The preflight checks canar/.env against these and aborts
+# on a mismatch, so a result is only ever produced with the intended embedding
+# model and collection — and results stay comparable across machines.
+environment:
+  embed_model: bge-m3
+  collection: utilitr_v1
+
 profiles:
   # Mirrors the product default (canar/app/retrieval/profiles.py) — measures
   # the product as it ships today.
@@ -34,3 +41,13 @@ profiles:
     score_threshold: 0.20
     source_filter: utilitr
     fallback_top_k: 3
+
+  # Sparse retrieval (BM25 via FastEmbed). Uncomment to compare dense vs sparse.
+  # Requires: FASTEMBED_SPARSE_MODEL set in canar/.env AND the collection
+  # ingested with a compatible sparse vector (vector_name from the same .env).
+  # - name: sparse_bm25
+  #   strategy: simple_sparse
+  #   top_k: 5
+  #   score_threshold: 0.35
+  #   source_filter: utilitr
+  #   fallback_top_k: 3

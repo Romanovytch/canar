@@ -36,6 +36,7 @@ Run:
 
 import dataclasses
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -70,11 +71,12 @@ from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 
 from canar.app.agents import r_helpdesk  # noqa: E402
-from canar.app.api.embed_client import EmbedClient  # noqa: E402
+from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
 from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter  # noqa: E402
 from canar.app.retrieval.models import RetrievalProfile, RetrievalQuery  # noqa: E402
+from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy  # noqa: E402
 from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -100,14 +102,43 @@ GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", BENCH.gen_max_tokens))
 # (qwen2.5:7b) avoids the timeouts of the reasoning 9B. Priority: env > YAML > product.
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_model
 
+
+def _git_commit() -> str:
+    """Short commit of the canar repo, so a result can be traced to the code."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, text=True
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+# Provenance — stamped on every result row so a CSV describes what produced it
+# (which embedding model, which collection, which judge, which code). This is
+# what makes results comparable across machines despite per-developer configs.
+PROVENANCE = {
+    "embed_model": cfg.embed_model,
+    "collection": ",".join(cfg.qdrant_collections),
+    "judge_model": JUDGE_MODEL,
+    "git_commit": _git_commit(),
+}
+
 # CanaR clients (product code). Retrieval is built per profile in main() so we
 # can sweep strategies; the Qdrant adapter is shared across profiles.
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
 qdrant_adapter = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
 
+# Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
+# FASTEMBED_SPARSE_MODEL. None means no sparse profile can run — same guard as
+# RetrievalService.from_config.
+sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_sparse_model else None
+
 # strategy name -> CanaR strategy class (extend as the product adds strategies)
-STRATEGIES = {"simple_vector": SimpleVectorStrategy}
+STRATEGIES = {
+    "simple_vector": SimpleVectorStrategy,
+    "simple_sparse": SimpleSparseStrategy,
+}
 
 # RAGAS judge — reuses the same local LLM/embeddings endpoints.
 # (LangChain wrappers because RAGAS expects them; this is eval-side only,
@@ -127,8 +158,32 @@ judge_embeddings = OpenAIEmbeddings(
 )
 
 
+def check_environment() -> None:
+    """
+    Abort if canar/.env does not match the environment the config.yaml declares.
+    Keeps results comparable: a CSV is only ever produced with the intended
+    embedding model and collection, never silently with a developer's local one.
+    """
+    expected = BENCH.environment or {}
+    exp_model = expected.get("embed_model")
+    if exp_model and exp_model != cfg.embed_model:
+        sys.exit(
+            f"Environment mismatch: config.yaml expects EMBED_MODEL '{exp_model}' but "
+            f"canar/.env has '{cfg.embed_model}'.\n"
+            "Align canar/.env (or update config.yaml's environment block) before running."
+        )
+    exp_collection = expected.get("collection")
+    if exp_collection and exp_collection not in cfg.qdrant_collections:
+        sys.exit(
+            f"Environment mismatch: config.yaml expects collection '{exp_collection}' but "
+            f"canar/.env has QDRANT_COLLECTIONS={list(cfg.qdrant_collections)}.\n"
+            "Align canar/.env (or update config.yaml's environment block) before running."
+        )
+
+
 def preflight() -> None:
     """Fail fast with a clear message if the AgoRa collection isn't ready."""
+    check_environment()
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
                           check_compatibility=False)
     for col in cfg.qdrant_collections:
@@ -170,6 +225,10 @@ def build_searcher(spec):
     """
     valid = {f.name for f in dataclasses.fields(RetrievalProfile)}
     params = {k: v for k, v in spec.params.items() if k in valid}
+    # Sparse retrieval needs the named sparse vector from the app config unless
+    # the profile overrides it explicitly (mirrors build_retrieval_profiles).
+    if spec.strategy == "simple_sparse" and "vector_name" not in params:
+        params["vector_name"] = cfg.qdrant_sparse_vector_name or None
     profile = RetrievalProfile(
         name=spec.name,
         strategy=spec.strategy,
@@ -183,10 +242,23 @@ def build_searcher(spec):
     strategy = strat_cls(profile, qdrant_adapter)
 
     def search(question: str):
-        qvec = embed.embed_query(question)
-        return strategy.search(
-            RetrievalQuery(text=question, profile_name=profile.name, dense_vector=qvec)
-        )
+        # Embed dense or sparse per strategy — same branch as RetrievalService.search.
+        if spec.strategy == "simple_sparse":
+            if sparse_embed is None:
+                sys.exit("Profile uses simple_sparse but FASTEMBED_SPARSE_MODEL is "
+                         "unset in canar/.env — no sparse encoder available.")
+            query = RetrievalQuery(
+                text=question,
+                profile_name=profile.name,
+                sparse_vector=sparse_embed.embed_query(question),
+            )
+        else:
+            query = RetrievalQuery(
+                text=question,
+                profile_name=profile.name,
+                dense_vector=embed.embed_query(question),
+            )
+        return strategy.search(query)
 
     return search
 
@@ -222,7 +294,8 @@ def make_pipeline(search):
 
 def main() -> None:
     preflight()
-    print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}\n")
+    print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}")
+    print(f"Provenance: {PROVENANCE}\n")
 
     summaries = []
     for spec in BENCH.profiles:
@@ -237,7 +310,9 @@ def main() -> None:
             # local judge is slow: give each job room, and run a few in parallel
             # (Ollama serves them sequentially but overlaps prompt processing).
             run_config=RunConfig(timeout=900, max_workers=3),
-            tag={"profile": spec.name},
+            # profile name + provenance: tagged onto every row and kept out of the
+            # score means, so each CSV records what produced it.
+            tag={"profile": spec.name, **PROVENANCE},
             file_label=spec.name,
         )
         summaries.append((spec.name, df))

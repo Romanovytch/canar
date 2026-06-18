@@ -8,3 +8,6 @@ __pycache__/
 
 # Evaluation outputs (each benchmark writes to its own results/)
 **/results/*.csv
+
+# Local notes (not for the repo)
+SPARSE_TODO.md
