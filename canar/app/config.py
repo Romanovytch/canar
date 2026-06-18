@@ -20,6 +20,7 @@ class AppConfig:
 
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")
+    qdrant_dense_vector_name: str = os.getenv("QDRANT_DENSE_VECTOR_NAME", "")
     qdrant_sparse_vector_name: str = os.getenv("QDRANT_SPARSE_VECTOR_NAME", "")
     qdrant_collections: list[str] = tuple(
         c.strip() for c in os.getenv("QDRANT_COLLECTIONS", "").split(",") if c.strip()
