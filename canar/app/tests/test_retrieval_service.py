@@ -22,6 +22,15 @@ class FakeSparseEmbedClient:
         return SparseVector(indices=[3], values=[0.7])
 
 
+class FakeConfig:
+    qdrant_collections = ("docs",)
+    qdrant_dense_vector_name = "text-dense"
+    qdrant_sparse_vector_name = "text-sparse"
+    fastembed_sparse_model = ""
+    qdrant_url = "http://qdrant.test"
+    qdrant_api_key = ""
+
+
 class FakeStrategy:
     def __init__(self):
         self.queries: list[RetrievalQuery] = []
@@ -110,3 +119,67 @@ def test_retrieval_service_embeds_sparse_only_for_sparse_profile():
             sparse_vector=SparseVector(indices=[3], values=[0.7]),
         )
     ]
+
+
+def test_retrieval_service_embeds_dense_and_sparse_for_hybrid_profile():
+    dense_embed = FakeEmbedClient()
+    sparse_embed = FakeSparseEmbedClient()
+    strategy = FakeStrategy()
+    service = RetrievalService(
+        embed_client=dense_embed,
+        sparse_embed_client=sparse_embed,
+        profiles={
+            "hybrid": RetrievalProfile(
+                name="hybrid",
+                strategy="hybrid",
+                collections=("docs",),
+                dense_top_k=30,
+                sparse_top_k=30,
+                fusion="rrf",
+                final_top_k=10,
+            )
+        },
+        agent_profiles={"r_helpdesk": "hybrid"},
+        strategies={"hybrid": strategy},
+    )
+
+    hits = service.search("r_helpdesk", "table filtre code_exact")
+
+    assert [hit.text for hit in hits] == ["answer context"]
+    assert dense_embed.queries == ["table filtre code_exact"]
+    assert sparse_embed.queries == ["table filtre code_exact"]
+    assert strategy.queries == [
+        RetrievalQuery(
+            text="table filtre code_exact",
+            profile_name="hybrid",
+            dense_vector=[1.0, 2.0],
+            sparse_vector=SparseVector(indices=[3], values=[0.7]),
+        )
+    ]
+
+
+def test_retrieval_service_builds_hybrid_with_dense_and_sparse_vector_names(
+    monkeypatch,
+):
+    class FakeQdrantAdapter:
+        def __init__(self, url: str, api_key: str | None = None):
+            self.url = url
+            self.api_key = api_key
+
+    import canar.app.retrieval.service as service_module
+
+    monkeypatch.setattr(service_module, "QdrantRetrievalAdapter", FakeQdrantAdapter)
+
+    service = RetrievalService.from_config(
+        FakeConfig(),
+        embed_client=FakeEmbedClient(),
+        sparse_embed_client=FakeSparseEmbedClient(),
+    )
+
+    hybrid = service.strategies["hybrid"]
+
+    assert service.strategies["simple_vector"].profile.vector_name == "text-dense"
+    assert hybrid.dense_strategy.profile.vector_name == "text-dense"
+    assert hybrid.sparse_strategy.profile.vector_name == "text-sparse"
+    assert hybrid.dense_strategy.profile.top_k == 30
+    assert hybrid.sparse_strategy.profile.top_k == 30
