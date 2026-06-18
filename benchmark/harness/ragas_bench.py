@@ -59,6 +59,52 @@ def retrieval_hit(expected: str, paths: list[str]) -> bool:
     return any(expected in p or p.endswith(Path(expected).name) for p in paths)
 
 
+def _write_answers_md(path, df, title, tag, score_cols, source_col) -> None:
+    """Write the text parts of a run as readable markdown, one section per question."""
+    lines = [f"# {title}", ""]
+    if tag:
+        lines += ["> " + " · ".join(f"{k}: {v}" for k, v in tag.items()), ""]
+
+    for i, row in df.iterrows():
+        lines += [f"## Q{i + 1}. {row['user_input']}", ""]
+
+        scores = " · ".join(
+            f"{c}={row[c]:.2f}"
+            for c in score_cols
+            if c in df.columns and pd.notna(row[c])
+        )
+        if scores:
+            lines += [f"`{scores}`", ""]
+
+        answer = str(row.get("response", "")).strip()
+        lines += ["**Answer**", "", answer or "_(empty)_", ""]
+
+        if "reference" in df.columns:
+            lines += ["**Reference**", "", str(row["reference"]).strip(), ""]
+
+        if source_col and source_col in df.columns:
+            lines += [f"**Expected source:** `{row[source_col]}`", ""]
+        if "retrieved_paths" in df.columns:
+            lines += [f"**Retrieved:** `{row['retrieved_paths']}`", ""]
+
+        contexts = row.get("retrieved_contexts")
+        if contexts is not None and len(contexts) > 0:
+            lines += ["**Retrieved context**", ""]
+            for j, ctx in enumerate(contexts, 1):
+                lines += [
+                    f"<details><summary>Source {j}</summary>",
+                    "",
+                    str(ctx),
+                    "",
+                    "</details>",
+                    "",
+                ]
+
+        lines += ["---", ""]
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def run_benchmark(
     *,
     name: str,
@@ -153,10 +199,22 @@ def run_benchmark(
     print(out_df[["user_input"] + score_cols].to_string(index=False))
     print(f"\nMean scores:\n{out_df[score_cols].mean(numeric_only=True).to_string()}")
 
+    # Each run gets its own folder with the numbers and the text split apart:
+    #   metrics.csv  — only the scores (plus a row id and provenance), easy to read/plot
+    #   answers.md   — the text parts (question, answer, reference, retrieved context)
     results_dir.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     label = f"{file_label}_" if file_label else ""
-    out_path = results_dir / f"results_{label}{stamp}.csv"
-    out_df.to_csv(out_path, index=False)
-    print(f"\nFull results saved to {out_path}")
+    run_dir = results_dir / f"{label}{stamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    tag_cols = list(tag) if tag else []
+    metrics_path = run_dir / "metrics.csv"
+    out_df[["user_input"] + tag_cols + score_cols].to_csv(metrics_path, index=False)
+
+    answers_path = run_dir / "answers.md"
+    _write_answers_md(answers_path, out_df, name, tag, score_cols, dataset.source_col)
+
+    print(f"\nMetrics saved to {metrics_path}")
+    print(f"Answers saved to {answers_path}")
     return out_df
