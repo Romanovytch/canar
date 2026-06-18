@@ -10,7 +10,7 @@ product** (CanaR + AgoRa) and to compare retrieval strategies as they land.
 ```
 benchmark/
 ├── harness/            shared, product-agnostic engine
-│   ├── ragas_bench.py        run_benchmark(): loop → RAGAS → save CSV
+│   ├── ragas_bench.py        run_benchmark(): loop → RAGAS → save metrics.csv + answers.md
 │   └── retrieval_metrics.py  hit_rate, MRR, recall, precision, nDCG
 ├── datasets/           question sets + ground truth
 │   ├── utilitr_questions.csv  12 utilitR-grounded questions
@@ -22,7 +22,6 @@ benchmark/
 │   ├── ingest.py              builds the `utilitr` collection
 │   ├── eval_utilitr.py        utilitR-grounded, replica pipeline
 │   └── eval_demo.py           5-question methodology smoke test
-├── RESULTS.md          one entry per meaningful run
 └── requirements.txt   .env(.example)
 ```
 
@@ -65,8 +64,9 @@ python replica/eval_utilitr.py
 python replica/eval_demo.py
 ```
 
-Each run saves a timestamped CSV in the script's `results/` (gitignored).
-Knobs live at the top of each script; key ones for `e2e`:
+Each `e2e` run saves a timestamped folder in `e2e/results/` (gitignored) with
+`metrics.csv` (the scores) and `answers.md` (question, answer, reference,
+retrieved context). Knobs live at the top of each script; key ones for `e2e`:
 
 - `GEN_MAX_TOKENS` (default 8192) — `qwen3.5` is a *reasoning* model and burns
   a hidden token budget before answering; the app's default 2048 returns empty

@@ -58,7 +58,8 @@ cd /home/cereq/opt/pedro/canar/benchmark && source .venv/bin/activate
 JUDGE_MODEL=qwen2.5:7b python e2e/eval_e2e.py
 ```
 
-Timestamped results land in `e2e/results/` (gitignored).
+Each run lands in a timestamped folder under `e2e/results/` (gitignored):
+`metrics.csv` (the scores) and `answers.md` (question, answer, reference, context).
 
 **Knobs** (env vars / top of `eval_e2e.py`):
 - `GEN_MAX_TOKENS` (default 8192) — generation cap. The product model
