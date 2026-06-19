@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient
 from canar.app.config import AppConfig
 from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
 from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
 from canar.app.retrieval.profiles import AGENT_RETRIEVAL_PROFILES, build_retrieval_profiles
 from canar.app.retrieval.strategies.base import RetrievalStrategy
+from canar.app.retrieval.strategies.hybrid import HybridStrategy
 from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy
 from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy
 
@@ -34,15 +37,35 @@ class RetrievalService:
     ) -> RetrievalService:
         profiles = build_retrieval_profiles(
             tuple(cfg.qdrant_collections),
+            dense_vector_name=cfg.qdrant_dense_vector_name,
             sparse_vector_name=cfg.qdrant_sparse_vector_name,
         )
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
+        hybrid_profile = profiles["hybrid"]
+        hybrid_dense_profile = replace(
+            hybrid_profile,
+            name="hybrid_dense",
+            strategy="simple_vector",
+            top_k=hybrid_profile.dense_top_k or hybrid_profile.top_k,
+            vector_name=cfg.qdrant_dense_vector_name or None,
+        )
+        hybrid_sparse_profile = replace(
+            hybrid_profile,
+            name="hybrid_sparse",
+            strategy="simple_sparse",
+            top_k=hybrid_profile.sparse_top_k or hybrid_profile.top_k,
+        )
         strategies: dict[str, RetrievalStrategy] = {
             "simple_vector": SimpleVectorStrategy(profiles["simple_vector"], qdrant),
             "simple_sparse": SimpleSparseStrategy(profiles["simple_sparse"], qdrant),
+            "hybrid": HybridStrategy(
+                hybrid_profile,
+                SimpleVectorStrategy(hybrid_dense_profile, qdrant),
+                SimpleSparseStrategy(hybrid_sparse_profile, qdrant),
+            ),
         }
         return cls(
             embed_client=embed_client,
@@ -67,12 +90,12 @@ class RetrievalService:
 
         dense_vector = None
         sparse_vector = None
-        if profile.strategy == "simple_vector":
+        if profile.strategy in {"simple_vector", "hybrid"}:
             dense_vector = self.embed_client.embed_query(query)
-        elif profile.strategy == "simple_sparse":
+        if profile.strategy in {"simple_sparse", "hybrid"}:
             if self.sparse_embed_client is None:
                 raise ValueError(
-                    "simple_sparse retrieval requires FASTEMBED_SPARSE_MODEL "
+                    f"{profile.strategy} retrieval requires FASTEMBED_SPARSE_MODEL "
                     "or an injected sparse embed client"
                 )
             sparse_vector = self.sparse_embed_client.embed_query(query)

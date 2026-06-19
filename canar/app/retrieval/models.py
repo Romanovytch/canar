@@ -20,6 +20,10 @@ class RetrievalProfile:
     source_filter: str | None = "utilitr"
     fallback_top_k: int = 3
     vector_name: str | None = None
+    dense_top_k: int | None = None
+    sparse_top_k: int | None = None
+    fusion: str | None = None
+    final_top_k: int | None = None
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
 
 def build_retrieval_profiles(
     collections: tuple[str, ...],
+    dense_vector_name: str | None = None,
     sparse_vector_name: str | None = None,
 ) -> dict[str, RetrievalProfile]:
     return {
@@ -21,6 +22,7 @@ def build_retrieval_profiles(
             score_threshold=0.35,
             source_filter="utilitr",
             fallback_top_k=3,
+            vector_name=dense_vector_name or None,
         ),
         "simple_sparse": RetrievalProfile(
             name="simple_sparse",
@@ -31,5 +33,19 @@ def build_retrieval_profiles(
             source_filter="utilitr",
             fallback_top_k=3,
             vector_name=sparse_vector_name or None,
+        ),
+        "hybrid": RetrievalProfile(
+            name="hybrid",
+            strategy="hybrid",
+            collections=collections,
+            top_k=5,
+            score_threshold=0.35,
+            source_filter="utilitr",
+            fallback_top_k=5,
+            vector_name=sparse_vector_name or None,
+            dense_top_k=10,
+            sparse_top_k=10,
+            fusion="rrf",
+            final_top_k=5,
         ),
     }
