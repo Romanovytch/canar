@@ -11,6 +11,7 @@ class AppConfig:
     llm_base: str = os.getenv("LLM_API_BASE", "")
     llm_key: str = os.getenv("LLM_API_KEY", "")
     llm_model: str = os.getenv("LLM_MODEL", "")
+    llm_thinking: str = os.getenv("LLM_THINKING", "")  # none, low, medium, high
 
     embed_base: str = os.getenv("EMBED_API_BASE", "")
     embed_key: str = os.getenv("EMBED_API_KEY", "")
