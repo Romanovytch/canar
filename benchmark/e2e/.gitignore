@@ -1,1 +1,2 @@
-results/*.csv
+# Evaluation outputs — whole results tree (run_*/<strategy>/metrics.csv + answers.md)
+results/
