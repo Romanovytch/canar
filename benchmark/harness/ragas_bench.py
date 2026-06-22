@@ -118,6 +118,7 @@ def run_benchmark(
     retrieval_k: int | None = None,
     tag: dict | None = None,
     file_label: str | None = None,
+    group_dir: Path | None = None,
 ) -> pd.DataFrame:
     """
     Run `pipeline` over every question in `dataset`, score with RAGAS *and* the
@@ -199,20 +200,25 @@ def run_benchmark(
     print(out_df[["user_input"] + score_cols].to_string(index=False))
     print(f"\nMean scores:\n{out_df[score_cols].mean(numeric_only=True).to_string()}")
 
-    # Each run gets its own folder with the numbers and the text split apart:
+    # Output folder, holding the numbers and the text split apart:
     #   metrics.csv  — only the scores (plus a row id and provenance), easy to read/plot
     #   answers.md   — the text parts (question, answer, reference, retrieved context)
-    results_dir.mkdir(exist_ok=True)
+    # With `group_dir`, all strategies of one benchmark run share it and each
+    # gets a subfolder (group_dir/<strategy>/); otherwise a timestamped folder.
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    label = f"{file_label}_" if file_label else ""
-    run_dir = results_dir / f"{label}{stamp}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if group_dir is not None:
+        out_dir = group_dir / (file_label or "run")
+    else:
+        results_dir.mkdir(exist_ok=True)
+        label = f"{file_label}_" if file_label else ""
+        out_dir = results_dir / f"{label}{stamp}"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     tag_cols = list(tag) if tag else []
-    metrics_path = run_dir / "metrics.csv"
+    metrics_path = out_dir / "metrics.csv"
     out_df[["user_input"] + tag_cols + score_cols].to_csv(metrics_path, index=False)
 
-    answers_path = run_dir / "answers.md"
+    answers_path = out_dir / "answers.md"
     _write_answers_md(answers_path, out_df, name, tag, score_cols, dataset.source_col)
 
     print(f"\nMetrics saved to {metrics_path}")

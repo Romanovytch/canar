@@ -2,5 +2,7 @@ ragas>=0.3
 langchain-openai>=0.2
 python-dotenv>=1.0
 pandas>=2.0
-qdrant-client>=1.9.0,<1.16.0
+qdrant-client>=1.10
 pyyaml>=6.0
+# Sparse query encoder (BM25) for the simple_sparse and hybrid strategies.
+fastembed>=0.8.0

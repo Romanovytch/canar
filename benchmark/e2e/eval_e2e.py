@@ -34,11 +34,11 @@ Run:
     python e2e/eval_e2e.py
 """
 
-import dataclasses
 import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -74,10 +74,8 @@ from canar.app.agents import r_helpdesk  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
-from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter  # noqa: E402
-from canar.app.retrieval.models import RetrievalProfile, RetrievalQuery  # noqa: E402
-from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy  # noqa: E402
-from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy  # noqa: E402
+from canar.app.retrieval.models import RetrievalQuery  # noqa: E402
+from canar.app.retrieval.service import RetrievalService  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config — product settings from canar/.env; benchmark settings from config.yaml.
@@ -123,22 +121,19 @@ PROVENANCE = {
     "git_commit": _git_commit(),
 }
 
-# CanaR clients (product code). Retrieval is built per profile in main() so we
-# can sweep strategies; the Qdrant adapter is shared across profiles.
+# CanaR clients (product code).
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
-qdrant_adapter = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
 
 # Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
-# FASTEMBED_SPARSE_MODEL. None means no sparse profile can run — same guard as
-# RetrievalService.from_config.
+# FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
 sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_sparse_model else None
 
-# strategy name -> CanaR strategy class (extend as the product adds strategies)
-STRATEGIES = {
-    "simple_vector": SimpleVectorStrategy,
-    "simple_sparse": SimpleSparseStrategy,
-}
+# The product's retrieval service builds the real strategies exactly as the app
+# does — simple_vector (dense), simple_sparse (BM25), and hybrid (dense + sparse
+# fused). The benchmark drives these instead of reconstructing them, so it
+# measures the colleagues' actual retrieval code, hybrid composition included.
+service = RetrievalService.from_config(cfg, embed, sparse_embed)
 
 # RAGAS judge — reuses the same local LLM/embeddings endpoints.
 # (LangChain wrappers because RAGAS expects them; this is eval-side only,
@@ -202,9 +197,16 @@ def preflight() -> None:
                 "by AgoRa, and CanaR's source filter would return nothing. "
                 "Re-ingest with agora-ingest."
             )
-        # the collection's vector size must match the embedding model CanaR
-        # queries with, or every search crashes (e.g. nomic=768 vs bge-m3=1024)
-        col_dim = client.get_collection(col).config.params.vectors.size
+        # the collection's dense vector size must match the embedding model CanaR
+        # queries with, or every search crashes (e.g. nomic=768 vs bge-m3=1024).
+        # Multi-vector collections expose named vectors as a dict, so pick the
+        # dense one CanaR queries (QDRANT_DENSE_VECTOR_NAME).
+        vectors_cfg = client.get_collection(col).config.params.vectors
+        if isinstance(vectors_cfg, dict):
+            dense_name = cfg.qdrant_dense_vector_name or next(iter(vectors_cfg))
+            col_dim = vectors_cfg[dense_name].size
+        else:
+            col_dim = vectors_cfg.size
         query_dim = len(embed.embed_query("probe"))
         if col_dim != query_dim:
             sys.exit(
@@ -218,47 +220,31 @@ def preflight() -> None:
 
 def build_searcher(spec):
     """
-    Build CanaR's real retrieval for one config profile. This replicates exactly
-    what RetrievalService.search does internally (embed -> strategy.search), but
-    lets the benchmark drive the profile's hyperparameters from config.yaml so
-    strategies can be compared. `product_default` mirrors the shipped profile.
+    Resolve the product strategy named by a config profile and return a callable
+    that runs it. The strategy — and, for `hybrid`, its dense + sparse
+    sub-strategies and fusion — is the one `RetrievalService` built from
+    canar/.env, so the benchmark measures the shipped retrieval code, not a
+    reimplementation. The query vectors are embedded the same way
+    `RetrievalService.search` does, per strategy.
     """
-    valid = {f.name for f in dataclasses.fields(RetrievalProfile)}
-    params = {k: v for k, v in spec.params.items() if k in valid}
-    # Sparse retrieval needs the named sparse vector from the app config unless
-    # the profile overrides it explicitly (mirrors build_retrieval_profiles).
-    if spec.strategy == "simple_sparse" and "vector_name" not in params:
-        params["vector_name"] = cfg.qdrant_sparse_vector_name or None
-    profile = RetrievalProfile(
-        name=spec.name,
-        strategy=spec.strategy,
-        collections=tuple(cfg.qdrant_collections),
-        **params,
-    )
-    strat_cls = STRATEGIES.get(spec.strategy)
-    if strat_cls is None:
-        sys.exit(f"Strategy {spec.strategy!r} not implemented in the benchmark yet "
-                 f"(available: {list(STRATEGIES)}).")
-    strategy = strat_cls(profile, qdrant_adapter)
+    strategy = service.strategies.get(spec.strategy)
+    if strategy is None:
+        sys.exit(f"Strategy {spec.strategy!r} not available in RetrievalService "
+                 f"(have: {list(service.strategies)}).")
+
+    needs_dense = spec.strategy in {"simple_vector", "hybrid"}
+    needs_sparse = spec.strategy in {"simple_sparse", "hybrid"}
+    if needs_sparse and sparse_embed is None:
+        sys.exit(f"Profile uses {spec.strategy!r} but FASTEMBED_SPARSE_MODEL is unset "
+                 "in canar/.env — no sparse encoder available.")
 
     def search(question: str):
-        # Embed dense or sparse per strategy — same branch as RetrievalService.search.
-        if spec.strategy == "simple_sparse":
-            if sparse_embed is None:
-                sys.exit("Profile uses simple_sparse but FASTEMBED_SPARSE_MODEL is "
-                         "unset in canar/.env — no sparse encoder available.")
-            query = RetrievalQuery(
-                text=question,
-                profile_name=profile.name,
-                sparse_vector=sparse_embed.embed_query(question),
-            )
-        else:
-            query = RetrievalQuery(
-                text=question,
-                profile_name=profile.name,
-                dense_vector=embed.embed_query(question),
-            )
-        return strategy.search(query)
+        return strategy.search(RetrievalQuery(
+            text=question,
+            profile_name=spec.name,
+            dense_vector=embed.embed_query(question) if needs_dense else None,
+            sparse_vector=sparse_embed.embed_query(question) if needs_sparse else None,
+        ))
 
     return search
 
@@ -297,6 +283,9 @@ def main() -> None:
     print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}")
     print(f"Provenance: {PROVENANCE}\n")
 
+    # One folder per benchmark run; each strategy gets a subfolder inside it.
+    run_dir = HERE / "results" / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
     summaries = []
     for spec in BENCH.profiles:
         df = run_benchmark(
@@ -314,20 +303,27 @@ def main() -> None:
             # score means, so each CSV records what produced it.
             tag={"profile": spec.name, **PROVENANCE},
             file_label=spec.name,
+            group_dir=run_dir,            # all strategies of this run share run_dir
         )
         summaries.append((spec.name, df))
 
-    # Side-by-side comparison — the point of sweeping profiles.
-    if len(summaries) > 1:
+    # Side-by-side comparison — the point of comparing strategies. Printed and
+    # also saved as comparison.csv at the run folder's root, so the run is a
+    # self-contained artifact.
+    if summaries:
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
                 "retrieval_latency_s", "faithfulness", "answer_relevancy"]
         rows = [
-            {"profile": name,
-             **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
+            {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
             for name, df in summaries
         ]
-        print("\n=== Profile comparison (means) ===")
-        print(pd.DataFrame(rows).to_string(index=False))
+        comparison = pd.DataFrame(rows)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        comparison.to_csv(run_dir / "comparison.csv", index=False)
+        if len(summaries) > 1:
+            print("\n=== Profile comparison (means) ===")
+            print(comparison.to_string(index=False))
+        print(f"\nRun saved to {run_dir}")
 
 
 if __name__ == "__main__":

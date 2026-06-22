@@ -1,12 +1,16 @@
 # Benchmark configuration.
 #
-# `run`      — how the benchmark runs (dataset, judge, generation budget).
-# `profiles` — the retrieval strategies to compare. Each profile mirrors the
-#              fields of CanaR's RetrievalProfile (canar/app/retrieval), so the
-#              same knobs the product exposes (top_k, score_threshold, ...) can
-#              be swept here. The benchmark runs the dataset once per profile
-#              and tags every result row with the profile name, so you can
-#              compare strategies side by side.
+# `run`         — how the benchmark runs (dataset, judge, generation budget).
+# `environment` — the embed model + collection a run is meant to use; preflight
+#                 aborts if canar/.env differs, so results stay comparable.
+# `profiles`    — which product retrieval strategies to compare. Each profile
+#                 names a strategy that RetrievalService already builds from
+#                 canar/.env (simple_vector, simple_sparse, hybrid); the
+#                 benchmark runs the dataset once per profile and tags every row
+#                 with the profile name, so the strategies can be compared
+#                 side by side. The strategy's settings (top_k, fusion, ...) come
+#                 from the product's profiles.py — the benchmark measures the
+#                 real strategy, not an override.
 #
 # Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS.
 
@@ -22,32 +26,18 @@ run:
 # model and collection — and results stay comparable across machines.
 environment:
   embed_model: bge-m3
-  collection: utilitr_v1
+  collection: utilitr_v2       # multi-vector collection (dense + sparse), built by AgoRa
 
 profiles:
-  # Mirrors the product default (canar/app/retrieval/profiles.py) — measures
-  # the product as it ships today.
-  - name: product_default
+  # The three retrieval strategies, compared side by side. Each names a strategy
+  # RetrievalService built from canar/.env; settings live in the product's
+  # profiles.py. sparse and hybrid need FASTEMBED_SPARSE_MODEL set and the
+  # collection ingested with sparse vectors.
+  - name: dense
     strategy: simple_vector
-    top_k: 5
-    score_threshold: 0.35
-    source_filter: utilitr
-    fallback_top_k: 3
 
-  # Example experiment: retrieve more, prune less. Compare against the default.
-  - name: wider_topk
-    strategy: simple_vector
-    top_k: 10
-    score_threshold: 0.20
-    source_filter: utilitr
-    fallback_top_k: 3
+  - name: sparse
+    strategy: simple_sparse
 
-  # Sparse retrieval (BM25 via FastEmbed). Uncomment to compare dense vs sparse.
-  # Requires: FASTEMBED_SPARSE_MODEL set in canar/.env AND the collection
-  # ingested with a compatible sparse vector (vector_name from the same .env).
-  # - name: sparse_bm25
-  #   strategy: simple_sparse
-  #   top_k: 5
-  #   score_threshold: 0.35
-  #   source_filter: utilitr
-  #   fallback_top_k: 3
+  - name: hybrid
+    strategy: hybrid
