@@ -113,7 +113,28 @@ RetrievalProfile(
 )
 ```
 
-`hybrid` retrieval is not implemented in this repository yet. Sparse retrieval can be enabled by mapping an agent to `simple_sparse`, but ingestion remains a separate project and the configured Qdrant collections must already contain compatible sparse vectors.
+Hybrid implemented profile:
+
+```python
+RetrievalProfile(
+    name="hybrid",
+    strategy="hybrid",
+    collections=cfg.qdrant_collections,
+    top_k=5,
+    score_threshold=0.35,
+    source_filter="utilitr",
+    fallback_top_k=5,
+    dense_top_k=10,
+    sparse_top_k=10,
+    fusion="rrf",
+    final_top_k=5,
+    rrf_k=60,
+    dense_weight=1.0,
+    sparse_weight=1.0,
+)
+```
+
+Sparse and hybrid retrieval assume compatible sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
 
 ## Retrieval strategy
 
@@ -147,7 +168,15 @@ This strategy assumes sparse vectors already exist in Qdrant. The sparse vector 
 
 ### Hybrid retrieval
 
-Hybrid retrieval is intentionally not implemented. Future hybrid work should add a new strategy module without changing Streamlit UI, prompt assembly, or Qdrant adapter boundaries unless required by explicit design.
+The `hybrid` strategy runs dense and sparse retrieval separately, then fuses both ranked lists with weighted Reciprocal Rank Fusion (RRF). The local RRF score is:
+
+```text
+score += retriever_weight / (rrf_k + rank)
+```
+
+Ranks are one-based to preserve the original local fusion behavior. With the default `dense_weight=1.0`, `sparse_weight=1.0`, and `rrf_k=60`, hybrid retrieval behaves like equal-weight RRF. Raising `dense_weight` favors semantic matches; raising `sparse_weight` favors exact or lexical matches.
+
+The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weights are `[dense_weight, sparse_weight]`. This mirrors Qdrant weighted RRF semantics, where weights must follow the prefetch order exactly.
 
 ## Data model
 
@@ -170,6 +199,13 @@ class RetrievalProfile:
     source_filter: str | None = "utilitr"
     fallback_top_k: int = 3
     vector_name: str | None = None
+    dense_top_k: int | None = None
+    sparse_top_k: int | None = None
+    fusion: str | None = None
+    final_top_k: int | None = None
+    rrf_k: int = 60
+    dense_weight: float = 1.0
+    sparse_weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -289,5 +325,5 @@ Rules:
 - No explicit LLM error/timeout handling or retry strategy.
 - Tool/function calling support is not implemented.
 - Retrieval result caching is not present.
-- Hybrid retrieval is not implemented; sparse retrieval/index availability belongs to the separate ingestion project and must match `FASTEMBED_SPARSE_MODEL` / `QDRANT_SPARSE_VECTOR_NAME`.
+- Sparse and hybrid retrieval/index availability belongs to the separate ingestion project and must match `FASTEMBED_SPARSE_MODEL` / `QDRANT_SPARSE_VECTOR_NAME`.
 - `.env.example` references `MISTRAL_API_BASE`, while the runtime config expects `LLM_API_BASE`.
