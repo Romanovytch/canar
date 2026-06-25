@@ -9,6 +9,7 @@ from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, Retrieval
 from canar.app.retrieval.profiles import AGENT_RETRIEVAL_PROFILES, build_retrieval_profiles
 from canar.app.retrieval.strategies.base import RetrievalStrategy
 from canar.app.retrieval.strategies.hybrid import HybridStrategy
+from canar.app.retrieval.strategies.parent_child import ParentChildStrategy
 from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy
 from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy
 
@@ -58,13 +59,47 @@ class RetrievalService:
             strategy="simple_sparse",
             top_k=hybrid_profile.sparse_top_k or hybrid_profile.top_k,
         )
+        simple_vector_strategy = SimpleVectorStrategy(profiles["simple_vector"], qdrant)
+        simple_sparse_strategy = SimpleSparseStrategy(profiles["simple_sparse"], qdrant)
+        hybrid_strategy = HybridStrategy(
+            hybrid_profile,
+            SimpleVectorStrategy(hybrid_dense_profile, qdrant),
+            SimpleSparseStrategy(hybrid_sparse_profile, qdrant),
+        )
+
+        parent_child_vector_profile = profiles["parent_child_vector"]
+        parent_child_hybrid_profile = profiles["parent_child_hybrid"]
+        parent_child_hybrid_dense_profile = replace(
+            parent_child_hybrid_profile,
+            name="parent_child_hybrid_dense",
+            strategy="simple_vector",
+            top_k=parent_child_hybrid_profile.dense_top_k or parent_child_hybrid_profile.top_k,
+            vector_name=cfg.qdrant_dense_vector_name or None,
+        )
+        parent_child_hybrid_sparse_profile = replace(
+            parent_child_hybrid_profile,
+            name="parent_child_hybrid_sparse",
+            strategy="simple_sparse",
+            top_k=parent_child_hybrid_profile.sparse_top_k or parent_child_hybrid_profile.top_k,
+        )
+        parent_child_hybrid_child = HybridStrategy(
+            parent_child_hybrid_profile,
+            SimpleVectorStrategy(parent_child_hybrid_dense_profile, qdrant),
+            SimpleSparseStrategy(parent_child_hybrid_sparse_profile, qdrant),
+        )
         strategies: dict[str, RetrievalStrategy] = {
-            "simple_vector": SimpleVectorStrategy(profiles["simple_vector"], qdrant),
-            "simple_sparse": SimpleSparseStrategy(profiles["simple_sparse"], qdrant),
-            "hybrid": HybridStrategy(
-                hybrid_profile,
-                SimpleVectorStrategy(hybrid_dense_profile, qdrant),
-                SimpleSparseStrategy(hybrid_sparse_profile, qdrant),
+            "simple_vector": simple_vector_strategy,
+            "simple_sparse": simple_sparse_strategy,
+            "hybrid": hybrid_strategy,
+            "parent_child_vector": ParentChildStrategy(
+                parent_child_vector_profile,
+                SimpleVectorStrategy(parent_child_vector_profile, qdrant),
+                qdrant,
+            ),
+            "parent_child_hybrid": ParentChildStrategy(
+                parent_child_hybrid_profile,
+                parent_child_hybrid_child,
+                qdrant,
             ),
         }
         return cls(
@@ -90,9 +125,14 @@ class RetrievalService:
 
         dense_vector = None
         sparse_vector = None
-        if profile.strategy in {"simple_vector", "hybrid"}:
+        if profile.strategy in {
+            "simple_vector",
+            "parent_child_vector",
+            "parent_child_hybrid",
+            "hybrid",
+        }:
             dense_vector = self.embed_client.embed_query(query)
-        if profile.strategy in {"simple_sparse", "hybrid"}:
+        if profile.strategy in {"simple_sparse", "parent_child_hybrid", "hybrid"}:
             if self.sparse_embed_client is None:
                 raise ValueError(
                     f"{profile.strategy} retrieval requires FASTEMBED_SPARSE_MODEL "

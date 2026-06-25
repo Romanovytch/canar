@@ -40,6 +40,7 @@ class RetrievalHit:
     collection: str
     score: float
     score_norm: float
+    generation_text: str | None = None
     source: str | None = None
     source_url: str | None = None
     section: str = ""
