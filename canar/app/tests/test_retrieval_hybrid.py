@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from canar.app.retrieval.fusion.rrf import ReciprocalRankFusion
 from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery, SparseVector
 from canar.app.retrieval.profiles import build_retrieval_profiles
@@ -16,6 +18,20 @@ class FakeStrategy:
         return self.hits
 
 
+class RecordingFusion:
+    def __init__(self):
+        self.calls: list[tuple[list[list[RetrievalHit]], int, list[float] | None]] = []
+
+    def fuse(
+        self,
+        ranked_lists: list[list[RetrievalHit]],
+        top_k: int,
+        weights: list[float] | None = None,
+    ) -> list[RetrievalHit]:
+        self.calls.append((ranked_lists, top_k, weights))
+        return [hit for ranked_list in ranked_lists for hit in ranked_list][:top_k]
+
+
 def hit(text: str, score: float = 1.0, metadata: dict | None = None) -> RetrievalHit:
     return RetrievalHit(
         text=text,
@@ -27,6 +43,15 @@ def hit(text: str, score: float = 1.0, metadata: dict | None = None) -> Retrieva
     )
 
 
+def hybrid_query() -> RetrievalQuery:
+    return RetrievalQuery(
+        text="exact_table_name",
+        profile_name="hybrid",
+        dense_vector=[0.1, 0.2],
+        sparse_vector=SparseVector(indices=[1], values=[1.0]),
+    )
+
+
 def test_hybrid_profile_is_registered_with_expected_parameters():
     profiles = build_retrieval_profiles(("docs",), sparse_vector_name="text-sparse")
 
@@ -35,10 +60,13 @@ def test_hybrid_profile_is_registered_with_expected_parameters():
     assert profile.name == "hybrid"
     assert profile.strategy == "hybrid"
     assert profile.collections == ("docs",)
-    assert profile.dense_top_k == 30
-    assert profile.sparse_top_k == 30
+    assert profile.dense_top_k == 10
+    assert profile.sparse_top_k == 10
     assert profile.fusion == "rrf"
-    assert profile.final_top_k == 10
+    assert profile.final_top_k == 5
+    assert profile.rrf_k == 60
+    assert profile.dense_weight == 1.0
+    assert profile.sparse_weight == 1.0
     assert profile.vector_name == "text-sparse"
 
 
@@ -70,6 +98,106 @@ def test_rrf_combines_ranked_lists_and_merges_duplicate_hits():
     assert fused[0].score_norm == 1.0
 
 
+def test_rrf_equal_weights_match_default_behavior():
+    ranked_lists = [
+        [hit("dense top"), hit("dense second")],
+        [hit("sparse top"), hit("sparse second")],
+    ]
+
+    default_fused = ReciprocalRankFusion().fuse(ranked_lists, top_k=4)
+    weighted_fused = ReciprocalRankFusion().fuse(
+        ranked_lists,
+        top_k=4,
+        weights=[1.0, 1.0],
+    )
+
+    assert [result.text for result in weighted_fused] == [result.text for result in default_fused]
+    assert [result.score for result in weighted_fused] == [result.score for result in default_fused]
+
+
+def test_rrf_dense_weight_can_favor_dense_results():
+    fused = ReciprocalRankFusion().fuse(
+        [[hit("dense top")], [hit("sparse top")]],
+        top_k=2,
+        weights=[2.0, 1.0],
+    )
+
+    assert [result.text for result in fused] == ["dense top", "sparse top"]
+
+
+def test_rrf_sparse_weight_can_favor_sparse_results():
+    fused = ReciprocalRankFusion().fuse(
+        [[hit("dense top")], [hit("sparse top")]],
+        top_k=2,
+        weights=[1.0, 2.0],
+    )
+
+    assert [result.text for result in fused] == ["sparse top", "dense top"]
+
+
+def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():
+    profile = RetrievalProfile(
+        name="hybrid",
+        strategy="hybrid",
+        collections=("docs",),
+        fusion="rrf",
+        final_top_k=2,
+        dense_weight=3.0,
+        sparse_weight=1.0,
+    )
+    dense = FakeStrategy([hit("dense top")])
+    sparse = FakeStrategy([hit("sparse top")])
+    fusion = RecordingFusion()
+
+    HybridStrategy(profile, dense, sparse, fusion_strategies={"rrf": fusion}).search(hybrid_query())
+
+    ranked_lists, top_k, weights = fusion.calls[0]
+    assert ranked_lists == [dense.hits, sparse.hits]
+    assert top_k == 2
+    assert weights == [3.0, 1.0]
+
+
+def test_hybrid_strategy_uses_profile_rrf_k():
+    profile = RetrievalProfile(
+        name="hybrid",
+        strategy="hybrid",
+        collections=("docs",),
+        fusion="rrf",
+        final_top_k=1,
+        rrf_k=2,
+    )
+    dense = FakeStrategy([hit("dense top")])
+    sparse = FakeStrategy([])
+
+    hits = HybridStrategy(profile, dense, sparse).search(hybrid_query())
+
+    assert hits[0].score == pytest.approx(1.0 / 3.0)
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        ["heavy"],
+        [True],
+        [float("inf")],
+        [-1.0],
+        [0.0],
+    ],
+)
+def test_rrf_rejects_invalid_weights(weights):
+    with pytest.raises(ValueError, match="RRF weight|At least one RRF weight"):
+        ReciprocalRankFusion().fuse([[hit("dense top")]], top_k=1, weights=weights)
+
+
+def test_rrf_rejects_weight_count_mismatch():
+    with pytest.raises(ValueError, match="RRF weights must match"):
+        ReciprocalRankFusion().fuse(
+            [[hit("dense top")], [hit("sparse top")]],
+            top_k=2,
+            weights=[1.0],
+        )
+
+
 def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
     profile = RetrievalProfile(
         name="hybrid",
@@ -80,12 +208,7 @@ def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
     )
     dense = FakeStrategy([hit("dense top"), hit("shared", metadata={"chunk_id": "same"})])
     sparse = FakeStrategy([hit("shared", metadata={"chunk_id": "same"}), hit("sparse exact")])
-    query = RetrievalQuery(
-        text="exact_table_name",
-        profile_name="hybrid",
-        dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-    )
+    query = hybrid_query()
 
     hits = HybridStrategy(profile, dense, sparse).search(query)
 
@@ -145,9 +268,5 @@ def test_hybrid_strategy_rejects_unknown_fusion_method():
         sparse_vector=SparseVector(indices=[1], values=[1.0]),
     )
 
-    try:
+    with pytest.raises(ValueError, match="Unsupported hybrid fusion strategy"):
         HybridStrategy(profile, FakeStrategy([]), FakeStrategy([])).search(query)
-    except ValueError as exc:
-        assert "Unsupported hybrid fusion strategy" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError")
