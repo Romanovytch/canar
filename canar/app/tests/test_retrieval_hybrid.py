@@ -35,10 +35,10 @@ def test_hybrid_profile_is_registered_with_expected_parameters():
     assert profile.name == "hybrid"
     assert profile.strategy == "hybrid"
     assert profile.collections == ("docs",)
-    assert profile.dense_top_k == 30
-    assert profile.sparse_top_k == 30
+    assert profile.dense_top_k == 10
+    assert profile.sparse_top_k == 10
     assert profile.fusion == "rrf"
-    assert profile.final_top_k == 10
+    assert profile.final_top_k == 5
     assert profile.vector_name == "text-sparse"
 
 
