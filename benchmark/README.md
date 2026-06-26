@@ -11,34 +11,26 @@ product** (CanaR + AgoRa) and to compare retrieval strategies as they land.
 benchmark/
 ├── harness/            shared, product-agnostic engine
 │   ├── ragas_bench.py        run_benchmark(): loop → RAGAS → save metrics.csv + answers.md
-│   └── retrieval_metrics.py  hit_rate, MRR, recall, precision, nDCG
+│   ├── retrieval_metrics.py  hit_rate, MRR, recall, precision, nDCG
+│   └── bench_config.py       loads config.yaml
 ├── datasets/           question sets + ground truth
-│   ├── utilitr_questions.csv  12 utilitR-grounded questions
-│   └── demo.csv               5-question smoke set
-├── e2e/            ⭐ the product benchmark (CanaR's real code + AgoRa)
+│   └── utilitr_questions.csv  12 utilitR-grounded questions
+├── config.yaml         run settings + the strategies to compare
+├── e2e/                the product benchmark (CanaR's real code + AgoRa)
 │   ├── eval_e2e.py
 │   └── README.md
-├── replica/            standalone baselines (no product import)
-│   ├── ingest.py              builds the `utilitr` collection
-│   ├── eval_utilitr.py        utilitR-grounded, replica pipeline
-│   └── eval_demo.py           5-question methodology smoke test
+├── SETUP.md            enabling sparse + hybrid (named-vector ingestion)
+├── REPRODUCIBILITY.md  what reproduces exactly vs what is indicative
 └── requirements.txt   .env(.example)
 ```
 
-## The three levels
+## What it measures
 
-They form a progression. The difference between levels is **whose code runs**
-and **which collection** is queried — so a bad score localizes the cause.
-
-| Level | Script | Pipeline code | Collection | A bad score means |
-|---|---|---|---|---|
-| **e2e** ⭐ | `e2e/eval_e2e.py` | **CanaR's real modules** | AgoRa's `utilitr_v1` | a product problem worth a ticket |
-| replica (utilitR) | `replica/eval_utilitr.py` | standalone replica | `utilitr` | corpus / embedding issue |
-| replica (demo) | `replica/eval_demo.py` | standalone replica | `utilitr` | methodology smoke test |
-
-`e2e` is the priority: it imports `canar.app.*` and calls the exact chain the
-Streamlit app runs. The replicas don't import the product — they reproduce the
-flow with their own code, as a reference baseline. See [e2e/README.md](e2e/README.md).
+`e2e/eval_e2e.py` imports `canar.app.*` and calls the exact chain the Streamlit
+app runs, so a bad score is a real product problem. It drives the product's
+retrieval strategies — `simple_vector` (dense), `simple_sparse` (BM25) and
+`hybrid` (the two fused) — over the dataset and compares them side by side. See
+[e2e/README.md](e2e/README.md).
 
 ## Metrics — two independent layers
 
@@ -53,16 +45,11 @@ flow with their own code, as a reference baseline. See [e2e/README.md](e2e/READM
 
 ```bash
 source .venv/bin/activate
-
-# 1. e2e (the product) — needs the AgoRa collection built first:
-#    cd ../../agora && agora-ingest ... --collection utilitr_v1 --drop-collection
-JUDGE_MODEL=qwen2.5:7b python e2e/eval_e2e.py
-
-# 2. replicas (reference) — need the standalone `utilitr` collection:
-python replica/ingest.py        # once, or after changing chunking/embeddings
-python replica/eval_utilitr.py
-python replica/eval_demo.py
+python e2e/eval_e2e.py
 ```
+
+Needs the AgoRa-built collection (see `SETUP.md` for the dense + sparse
+ingestion the sparse/hybrid strategies require).
 
 Each `e2e` run saves a timestamped folder in `e2e/results/` (gitignored) with
 `metrics.csv` (the scores) and `answers.md` (question, answer, reference,

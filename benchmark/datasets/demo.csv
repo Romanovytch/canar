@@ -1,6 +1,0 @@
-query,grading_notes
-"Comment lire un fichier CSV en R ?","- utiliser read.csv() ou readr::read_csv() - le paramètre sep= ou delim= contrôle le séparateur - fileEncoding= gère l'encodage"
-"Quelle est la différence entre data.frame et tibble ?","- tibble vient du package tibble/tidyverse - tibble n'affiche que les premières lignes - tibble ne convertit pas les strings en factors automatiquement"
-"Comment faire une jointure entre deux tables en R ?","- utiliser merge() en base R - utiliser left_join() inner_join() etc. de dplyr - spécifier by= pour les colonnes clés"
-"Comment créer un graphique avec ggplot2 ?","- utiliser ggplot() avec aes() pour les aesthetics - ajouter des couches geom_ (geom_point geom_line geom_bar) - utiliser + pour combiner les couches"
-"Comment filtrer des lignes dans un data.frame en R ?","- utiliser subset() en base R - utiliser filter() de dplyr - utiliser des crochets avec une condition logique df[df$col > valeur, ]"

@@ -133,6 +133,7 @@ sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_spar
 # does — simple_vector (dense), simple_sparse (BM25), and hybrid (dense + sparse
 # fused). The benchmark drives these instead of reconstructing them, so it
 # measures the colleagues' actual retrieval code, hybrid composition included.
+
 service = RetrievalService.from_config(cfg, embed, sparse_embed)
 
 # RAGAS judge — reuses the same local LLM/embeddings endpoints.
@@ -265,6 +266,10 @@ def make_pipeline(search):
         answer = "".join(
             chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
         )
+        # The reasoning model can spend its whole budget "thinking" and return an
+        # empty answer. Flag it so a 0 score is read as "no answer", not "bad answer".
+        if not answer.strip():
+            answer = "[EMPTY_ANSWER]"
 
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.

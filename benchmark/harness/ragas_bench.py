@@ -54,11 +54,6 @@ class DatasetSpec:
     limit: int | None = None            # None = all rows; int = quick subset
 
 
-def retrieval_hit(expected: str, paths: list[str]) -> bool:
-    """Deterministic: did the expected source file appear among retrieved paths?"""
-    return any(expected in p or p.endswith(Path(expected).name) for p in paths)
-
-
 def _write_answers_md(path, df, title, tag, score_cols, source_col) -> None:
     """Write the text parts of a run as readable markdown, one section per question."""
     lines = [f"# {title}", ""]

@@ -6,10 +6,9 @@ relevant source(s) for a question — the retrieval-quality metrics required by
 the project roadmap (Hit Rate@k, MRR, Recall@k) plus Precision@k and nDCG@k.
 Latency is measured in the pipeline and carried on PipelineOutput.
 
-Relevance is matched the same way as the old `retrieval_hit`: an expected
-source counts as retrieved if its string appears in a retrieved path, or the
-path ends with its file name. `expected` may list several relevant sources
-separated by ";" (the end-June dataset will have multi-source questions).
+An expected source counts as retrieved if its string appears in a retrieved
+path, or the path ends with its file name. `expected` may list several relevant
+sources separated by ";" (the end-June dataset will have multi-source questions).
 
 Pure Python — only the stdlib `math`. No extra dependency.
 """
