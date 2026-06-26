@@ -1,3 +1,7 @@
+# Benchmark dependencies. Canonical declaration: the `benchmark` extra in
+# ../pyproject.toml (pip install -e "..[benchmark]" pulls these plus canar).
+# This plain list stays for a lightweight standalone venv that doesn't install
+# the full canar package; keep the two in sync.
 ragas>=0.3
 langchain-openai>=0.2
 python-dotenv>=1.0

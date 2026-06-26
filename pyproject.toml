@@ -41,3 +41,12 @@ ignore = []
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+# Benchmark-only dependencies (eval harness). The rest of what the benchmark
+# needs — qdrant-client, python-dotenv, fastembed — are already core deps above.
+# Install with: pip install -e ".[benchmark]"
+benchmark = [
+  "ragas>=0.3",
+  "langchain-openai>=0.2",
+  "pandas>=2.0",
+  "pyyaml>=6.0",
+]
