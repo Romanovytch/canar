@@ -37,12 +37,15 @@ def _unique_fiches(ranked_paths: list[str]) -> list[str]:
     up several times. Scoring documents (not chunks) is what keeps recall, nDCG
     and precision in [0, 1] — otherwise a fiche retrieved as N chunks counts as
     N relevant hits and recall can exceed 1.
+
+    Dedup on the *full* path: chunks of one fiche share the same file_path, so
+    this collapses them, while keeping two same-named fiches in different folders
+    distinct (deduping on the bare filename would drop one of them).
     """
     seen, unique = set(), []
     for path in ranked_paths:
-        key = Path(path).name or path
-        if key not in seen:
-            seen.add(key)
+        if path not in seen:
+            seen.add(path)
             unique.append(path)
     return unique
 
@@ -61,13 +64,15 @@ def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dic
     top_k = ranked_paths[:k]
 
     found = sum(1 for p in top_k if is_relevant(p))
-    ranks = [i for i, p in enumerate(ranked_paths, 1) if is_relevant(p)]
+    # Ranks within top-k, so MRR is @k like every other metric here (the first
+    # relevant doc beyond k does not count).
+    ranks = [i for i, p in enumerate(top_k, 1) if is_relevant(p)]
     dcg = sum(1.0 / math.log2(i + 1) for i, p in enumerate(top_k, 1) if is_relevant(p))
     idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(n_relevant, k) + 1))
 
     return {
         "hit_rate": 1.0 if found else 0.0,            # Hit Rate@k
-        "mrr": 1.0 / ranks[0] if ranks else 0.0,      # Mean Reciprocal Rank
+        "mrr": 1.0 / ranks[0] if ranks else 0.0,      # MRR@k
         "recall": found / n_relevant if n_relevant else 0.0,   # Recall@k
         "precision": found / k if k else 0.0,         # Precision@k
         "ndcg": dcg / idcg if idcg else 0.0,          # nDCG@k
