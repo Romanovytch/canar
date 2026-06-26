@@ -10,7 +10,9 @@ An expected source counts as retrieved if its string appears in a retrieved
 path, or the path ends with its file name. `expected` may list several relevant
 sources separated by ";" (the end-June dataset will have multi-source questions).
 
-Pure Python — only the stdlib `math`. No extra dependency.
+Pure Python — only the stdlib `math`. No extra dependency. Computed by hand,
+which is fine at this scale; if the benchmark grows, consider `ranx` for the
+ranking metrics instead.
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ def make_is_relevant(expected: str):
     targets = [t.strip() for t in str(expected).split(";") if t.strip()]
 
     def is_relevant(path: str) -> bool:
+        # NOTE: substring/filename matching can yield false positives depending on
+        # how `expected` is written. Fine for now; validate against the real
+        # benchmark dataset once it lands.
         return any(t in path or path.endswith(Path(t).name) for t in targets)
 
     return is_relevant, len(targets)
