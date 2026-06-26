@@ -24,6 +24,9 @@ class RetrievalProfile:
     sparse_top_k: int | None = None
     fusion: str | None = None
     final_top_k: int | None = None
+    rrf_k: int = 60
+    dense_weight: float = 1.0
+    sparse_weight: float = 1.0
 
 
 @dataclass(frozen=True)

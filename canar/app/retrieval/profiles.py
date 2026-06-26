@@ -47,5 +47,8 @@ def build_retrieval_profiles(
             sparse_top_k=10,
             fusion="rrf",
             final_top_k=5,
+            rrf_k=60,
+            dense_weight=1.0,
+            sparse_weight=1.0,
         ),
     }

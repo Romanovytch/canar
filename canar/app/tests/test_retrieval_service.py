@@ -181,5 +181,5 @@ def test_retrieval_service_builds_hybrid_with_dense_and_sparse_vector_names(
     assert service.strategies["simple_vector"].profile.vector_name == "text-dense"
     assert hybrid.dense_strategy.profile.vector_name == "text-dense"
     assert hybrid.sparse_strategy.profile.vector_name == "text-sparse"
-    assert hybrid.dense_strategy.profile.top_k == 30
-    assert hybrid.sparse_strategy.profile.top_k == 30
+    assert hybrid.dense_strategy.profile.top_k == 10
+    assert hybrid.sparse_strategy.profile.top_k == 10

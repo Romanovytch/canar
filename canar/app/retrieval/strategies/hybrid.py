@@ -18,7 +18,9 @@ class HybridStrategy:
         self.profile = profile
         self.dense_strategy = dense_strategy
         self.sparse_strategy = sparse_strategy
-        self.fusion_strategies = fusion_strategies or {"rrf": ReciprocalRankFusion()}
+        self.fusion_strategies = fusion_strategies or {
+            "rrf": ReciprocalRankFusion(rank_constant=profile.rrf_k)
+        }
 
     def search(self, query: RetrievalQuery) -> list[RetrievalHit]:
         if query.dense_vector is None:
@@ -39,6 +41,8 @@ class HybridStrategy:
             raise ValueError(f"Unsupported hybrid fusion strategy: {fusion_name!r}")
 
         return fusion.fuse(
+            # Weight order follows the ranked-list order, matching Qdrant's prefetch semantics.
             [dense_hits, sparse_hits],
             top_k=self.profile.final_top_k or self.profile.top_k,
+            weights=[self.profile.dense_weight, self.profile.sparse_weight],
         )

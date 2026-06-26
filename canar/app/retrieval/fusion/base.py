@@ -11,4 +11,5 @@ class FusionStrategy(Protocol):
         self,
         ranked_lists: Sequence[Sequence[RetrievalHit]],
         top_k: int,
+        weights: Sequence[float] | None = None,
     ) -> list[RetrievalHit]: ...
