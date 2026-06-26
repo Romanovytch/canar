@@ -180,6 +180,10 @@ def check_environment() -> None:
 def preflight() -> None:
     """Fail fast with a clear message if the AgoRa collection isn't ready."""
     check_environment()
+    # Validate only the vectors the active profiles actually query.
+    strategies = {p.strategy for p in BENCH.profiles}
+    needs_dense = bool(strategies & {"simple_vector", "hybrid"})
+    needs_sparse = bool(strategies & {"simple_sparse", "hybrid"})
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
                           check_compatibility=False)
     for col in cfg.qdrant_collections:
@@ -198,24 +202,42 @@ def preflight() -> None:
                 "by AgoRa, and CanaR's source filter would return nothing. "
                 "Re-ingest with agora-ingest."
             )
-        # the collection's dense vector size must match the embedding model CanaR
-        # queries with, or every search crashes (e.g. nomic=768 vs bge-m3=1024).
-        # Multi-vector collections expose named vectors as a dict, so pick the
-        # dense one CanaR queries (QDRANT_DENSE_VECTOR_NAME).
-        vectors_cfg = client.get_collection(col).config.params.vectors
-        if isinstance(vectors_cfg, dict):
-            dense_name = cfg.qdrant_dense_vector_name or next(iter(vectors_cfg))
-            col_dim = vectors_cfg[dense_name].size
-        else:
-            col_dim = vectors_cfg.size
-        query_dim = len(embed.embed_query("probe"))
-        if col_dim != query_dim:
-            sys.exit(
-                f"Dimension mismatch: collection '{col}' stores {col_dim}-dim vectors but "
-                f"EMBED_MODEL '{cfg.embed_model}' produces {query_dim}-dim queries.\n"
-                "Re-ingest the collection with the current embedding model "
-                "(agora-ingest ... --drop-collection)."
-            )
+        params = client.get_collection(col).config.params
+        vectors_cfg = params.vectors                 # dict (named) or single config
+        sparse_cfg = params.sparse_vectors or {}     # dict of named sparse vectors
+
+        if needs_dense:
+            # The dense vector must exist (by name on multi-vector collections) and
+            # its size must match the embedding model CanaR queries with
+            # (e.g. nomic=768 vs bge-m3=1024), or every dense search crashes.
+            if isinstance(vectors_cfg, dict):
+                dense_name = cfg.qdrant_dense_vector_name or next(iter(vectors_cfg), None)
+                if dense_name not in vectors_cfg:
+                    sys.exit(
+                        f"Collection '{col}' has no dense vector named {dense_name!r} "
+                        f"(named vectors: {list(vectors_cfg)}). Fix QDRANT_DENSE_VECTOR_NAME "
+                        "or re-ingest. See SETUP.md."
+                    )
+                col_dim = vectors_cfg[dense_name].size
+            else:
+                col_dim = vectors_cfg.size
+            query_dim = len(embed.embed_query("probe"))
+            if col_dim != query_dim:
+                sys.exit(
+                    f"Dimension mismatch: collection '{col}' dense vector is {col_dim}-dim "
+                    f"but EMBED_MODEL '{cfg.embed_model}' produces {query_dim}-dim queries.\n"
+                    "Re-ingest with the current embedding model (agora-ingest --drop-collection)."
+                )
+
+        if needs_sparse:
+            # sparse/hybrid profiles query a named sparse vector; it must exist.
+            sparse_name = cfg.qdrant_sparse_vector_name
+            if not sparse_cfg or (sparse_name and sparse_name not in sparse_cfg):
+                sys.exit(
+                    f"Collection '{col}' has no sparse vector {sparse_name or '(any)'!r} "
+                    f"(sparse vectors: {list(sparse_cfg)}). The sparse and hybrid profiles "
+                    "need it — re-ingest with a sparse vector. See SETUP.md."
+                )
     print(f"Preflight OK — collections {list(cfg.qdrant_collections)} ready at {cfg.qdrant_url}\n")
 
 
@@ -263,9 +285,12 @@ def make_pipeline(search):
 
         # generate with CanaR's ChatClient (the app streams; we join the stream).
         # max_tokens generous so the reasoning model finishes thinking AND answers.
+        # Timed separately from retrieval, useful e.g. to compare LLM models.
+        t1 = time.perf_counter()
         answer = "".join(
             chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
         )
+        generation_latency_s = time.perf_counter() - t1
         # The reasoning model can spend its whole budget "thinking" and return an
         # empty answer. Flag it so a 0 score is read as "no answer", not "bad answer".
         if not answer.strip():
@@ -278,6 +303,7 @@ def make_pipeline(search):
             contexts=[hit.text for hit in citations],
             paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
             retrieval_latency_s=retrieval_latency_s,
+            generation_latency_s=generation_latency_s,
         )
 
     return ask_canar
@@ -317,7 +343,8 @@ def main() -> None:
     # self-contained artifact.
     if summaries:
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
-                "retrieval_latency_s", "faithfulness", "answer_relevancy"]
+                "retrieval_latency_s", "generation_latency_s",
+                "faithfulness", "answer_relevancy"]
         rows = [
             {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
             for name, df in summaries

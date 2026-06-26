@@ -40,7 +40,8 @@ class PipelineOutput:
     answer: str
     contexts: list[str]                 # retrieved chunk texts (RAGAS context)
     paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
-    retrieval_latency_s: float | None = None         # time spent retrieving (Latency metric)
+    retrieval_latency_s: float | None = None         # time spent retrieving
+    generation_latency_s: float | None = None        # time spent generating the answer
 
 
 @dataclass
@@ -132,7 +133,7 @@ def run_benchmark(
     track_hits = dataset.source_col is not None
     print(f"{name}: {len(df)} questions\n")
 
-    samples, retr_rows, all_paths, latencies = [], [], [], []
+    samples, retr_rows, all_paths, latencies, gen_latencies = [], [], [], [], []
     for _, row in df.iterrows():
         question = row[dataset.question_col]
         print(f"Q: {question}")
@@ -143,6 +144,7 @@ def run_benchmark(
             out = PipelineOutput("", [], [])
 
         latencies.append(out.retrieval_latency_s)
+        gen_latencies.append(out.generation_latency_s)
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
             m = retrieval_metrics.compute(out.paths, row[dataset.source_col], k=retrieval_k)
@@ -180,9 +182,11 @@ def run_benchmark(
         for key, value in tag.items():
             out_df[key] = value
         meta_cols |= set(tag)
-    # latency is always available (deterministic, no source column needed)
+    # latencies are always available (deterministic, no source column needed)
     if any(latency is not None for latency in latencies):
         out_df["retrieval_latency_s"] = latencies
+    if any(latency is not None for latency in gen_latencies):
+        out_df["generation_latency_s"] = gen_latencies
     if track_hits:
         # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
         for metric_name in retr_rows[0]:
