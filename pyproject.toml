@@ -45,8 +45,10 @@ dev = ["pytest", "ruff"]
 # needs — qdrant-client, python-dotenv, fastembed — are already core deps above.
 # Install with: pip install -e ".[benchmark]"
 benchmark = [
-  "ragas>=0.3",
+  "ragas>=0.4.3",
   "langchain-openai>=0.2",
   "pandas>=2.0",
   "pyyaml>=6.0",
-]
+  "langchain-community>=0.3.9,<0.4.2", 
+  "pyyaml>=6.0"
+  ]
