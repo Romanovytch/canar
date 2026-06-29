@@ -133,10 +133,10 @@ def test_retrieval_service_embeds_dense_and_sparse_for_hybrid_profile():
                 name="hybrid",
                 strategy="hybrid",
                 collections=("docs",),
-                dense_top_k=30,
-                sparse_top_k=30,
+                dense_top_k=10,
+                sparse_top_k=10,
                 fusion="rrf",
-                final_top_k=10,
+                final_top_k=5,
             )
         },
         agent_profiles={"r_helpdesk": "hybrid"},

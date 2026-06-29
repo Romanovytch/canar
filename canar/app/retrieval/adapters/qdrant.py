@@ -65,6 +65,53 @@ class QdrantRetrievalAdapter:
             ) from exc
         return [self._to_hit(collection, point) for point in points]
 
+    def fetch_by_chunk_ids(
+        self,
+        collection: str,
+        chunk_ids: list[str],
+    ) -> dict[str, str]:
+        """
+        Return parent chunk text keyed by payload chunk_id.
+        """
+        if not chunk_ids:
+            return {}
+
+        query_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="chunk_id",
+                    match=models.MatchAny(any=chunk_ids),
+                )
+            ]
+        )
+        texts_by_id: dict[str, str] = {}
+        next_page_offset = None
+        while True:
+            points, next_page_offset = self.client.scroll(
+                collection_name=collection,
+                scroll_filter=query_filter,
+                limit=len(chunk_ids),
+                offset=next_page_offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                chunk_id = payload.get("chunk_id")
+                text = payload.get("text")
+                if isinstance(chunk_id, str) and isinstance(text, str):
+                    texts_by_id[chunk_id] = text
+            if next_page_offset is None or len(texts_by_id) >= len(set(chunk_ids)):
+                break
+        return texts_by_id
+
+    def collection_exists(self, collection: str) -> bool:
+        try:
+            self.client.get_collection(collection_name=collection)
+        except Exception:
+            return False
+        return True
+
     def _source_filter(self, source_filter: str | None) -> models.Filter | None:
         if not source_filter:
             return None

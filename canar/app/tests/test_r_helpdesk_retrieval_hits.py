@@ -29,3 +29,21 @@ def test_r_helpdesk_builds_context_from_retrieval_hits():
             "collection": "utilitr",
         }
     ]
+
+
+def test_r_helpdesk_prefers_generation_text_when_available():
+    hits = [
+        RetrievalHit(
+            text="Résumé court retrouvé.",
+            generation_text="Texte original plus complet pour la génération.",
+            collection="utilitr",
+            score=0.9,
+            score_norm=1.0,
+            section="Résumé",
+        )
+    ]
+
+    messages, _ = r_helpdesk.build_messages("Comment filtrer ?", hits)
+
+    assert "Texte original plus complet pour la génération." in messages[1]["content"]
+    assert "Résumé court retrouvé." not in messages[1]["content"]

@@ -37,7 +37,7 @@ def assemble_context(citations: list[RetrievalHit]) -> tuple[str, list[dict]]:
     srcs = []
     for i, hit in enumerate(citations, 1):
         label = f"S{i}"
-        lines.append(f"[{label}] {hit.section}\n{hit.text}\n")
+        lines.append(f"[{label}] {hit.section}\n{hit.generation_text or hit.text}\n")
         srcs.append(
             {
                 "label": label,
