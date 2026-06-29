@@ -1,0 +1,43 @@
+# Benchmark configuration.
+#
+# `run`         — how the benchmark runs (dataset, judge, generation budget).
+# `environment` — the embed model + collection a run is meant to use; preflight
+#                 aborts if canar/.env differs, so results stay comparable.
+# `profiles`    — which product retrieval strategies to compare. Each profile
+#                 names a strategy that RetrievalService already builds from
+#                 canar/.env (simple_vector, simple_sparse, hybrid); the
+#                 benchmark runs the dataset once per profile and tags every row
+#                 with the profile name, so the strategies can be compared
+#                 side by side. The strategy's settings (top_k, fusion, ...) come
+#                 from the product's profiles.py — the benchmark measures the
+#                 real strategy, not an override.
+#
+# Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS.
+
+run:
+  dataset: datasets/utilitr_questions.csv   # path relative to benchmark/
+  agent: r_helpdesk
+  limit: null                  # null = all 12 questions; set an int for a quick pass
+  judge_model: qwen2.5:7b      # non-reasoning judge (fast, no timeouts); null = product LLM
+  gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers
+
+# Expected environment. The preflight checks canar/.env against these and aborts
+# on a mismatch, so a result is only ever produced with the intended embedding
+# model and collection — and results stay comparable across machines.
+environment:
+  embed_model: bge-m3
+  collection: utilitr_v2       # multi-vector collection (dense + sparse), built by AgoRa
+
+profiles:
+  # The three retrieval strategies, compared side by side. Each names a strategy
+  # RetrievalService built from canar/.env; settings live in the product's
+  # profiles.py. sparse and hybrid need FASTEMBED_SPARSE_MODEL set and the
+  # collection ingested with sparse vectors.
+  - name: dense
+    strategy: simple_vector
+
+  - name: sparse
+    strategy: simple_sparse
+
+  - name: hybrid
+    strategy: hybrid

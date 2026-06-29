@@ -1,0 +1,13 @@
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local credentials (keep .env.example tracked)
+.env
+
+# Evaluation outputs — whole results tree (run_*/<strategy>/metrics.csv + answers.md)
+**/results/
+
+# Local notes (not for the repo)
+SPARSE_TODO.md
