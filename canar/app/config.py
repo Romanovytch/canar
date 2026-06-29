@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class AppConfig:
     llm_base: str = os.getenv("LLM_API_BASE", "")
@@ -18,6 +25,12 @@ class AppConfig:
     embed_model: str = os.getenv("EMBED_MODEL", "")
 
     fastembed_sparse_model: str = os.getenv("FASTEMBED_SPARSE_MODEL", "")
+
+    rerank_enabled: bool = _env_bool("RERANK", False)
+    reranker_name: str = os.getenv("RERANKER", "bge")
+    rerank_top_n: int = int(os.getenv("RERANK_TOP_N", "5"))
+    rerank_device: str | None = os.getenv("RERANK_DEVICE", "") or None
+    rerank_max_length: int = int(os.getenv("RERANK_MAX_LENGTH", "8192"))
 
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")

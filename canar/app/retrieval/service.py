@@ -8,6 +8,7 @@ from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
 from canar.app.retrieval.expanders import HitExpander, ParentChildExpander
 from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
 from canar.app.retrieval.profiles import AGENT_RETRIEVAL_PROFILES, build_retrieval_profiles
+from canar.app.retrieval.ranking import Reranker, build_reranker
 from canar.app.retrieval.strategies.base import RetrievalStrategy
 from canar.app.retrieval.strategies.hybrid import HybridStrategy
 from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy
@@ -23,6 +24,9 @@ class RetrievalService:
         strategies: dict[str, RetrievalStrategy],
         hit_expanders: dict[str, HitExpander] | None = None,
         sparse_embed_client: FastEmbedClient | None = None,
+        reranker: Reranker | None = None,
+        rerank_enabled: bool = False,
+        rerank_top_n: int | None = None,
     ):
         self.embed_client = embed_client
         self.sparse_embed_client = sparse_embed_client
@@ -30,6 +34,9 @@ class RetrievalService:
         self.agent_profiles = agent_profiles
         self.strategies = strategies
         self.hit_expanders = hit_expanders or {}
+        self.reranker = reranker
+        self.rerank_enabled = rerank_enabled
+        self.rerank_top_n = rerank_top_n
 
     @classmethod
     def from_config(
@@ -45,6 +52,16 @@ class RetrievalService:
         )
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
+
+        reranker = (
+            build_reranker(
+                cfg.reranker_name,
+                device=cfg.rerank_device,
+                max_length=cfg.rerank_max_length,
+            )
+            if cfg.rerank_enabled
+            else None
+        )
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
         hybrid_profile = profiles["hybrid"]
@@ -84,9 +101,17 @@ class RetrievalService:
             strategies=strategies,
             hit_expanders={"parent_child": ParentChildExpander(qdrant)},
             sparse_embed_client=sparse_embed_client,
+            reranker=reranker,
+            rerank_enabled=cfg.rerank_enabled,
+            rerank_top_n=cfg.rerank_top_n,
         )
 
-    def search(self, agent: str, query: str) -> list[RetrievalHit]:
+    def search(
+        self,
+        agent: str,
+        query: str,
+        rerank: bool | None = None,
+    ) -> list[RetrievalHit]:
         profile_name = self.agent_profiles.get(agent)
         if profile_name is None:
             return []
@@ -117,8 +142,17 @@ class RetrievalService:
             dense_vector=dense_vector,
             sparse_vector=sparse_vector,
         )
-        hits = strategy.search(retrieval_query)
-        return self._expand_hits(profile, hits)
+        hits = self._expand_hits(profile, hits)
+        should_rerank = self.rerank_enabled if rerank is None else rerank
+        if should_rerank and self._supports_rerank(profile):
+            if self.reranker is None:
+                raise ValueError("rerank=True but no reranker is configured")
+            return self.reranker.rerank(
+                query=query,
+                candidates=hits,
+                top_n=self.rerank_top_n,
+            )
+        return hits
 
     def _expand_hits(
         self,
@@ -132,3 +166,6 @@ class RetrievalService:
         if expander is None:
             raise ValueError("Unsupported retrieval hit expansion: 'parent_child'")
         return expander.expand(hits, profile.parent_child_params())
+
+    def _supports_rerank(self, profile: RetrievalProfile) -> bool:
+        return profile.strategy in {"hybrid", "parent_child_hybrid"}

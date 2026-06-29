@@ -23,6 +23,27 @@ results = reranker.rerank(query=query, candidates=hits, top_n=10)
 The returned candidates preserve the original retrieval fields and score. Each
 result also receives a new `rerank_score` field used for ordering.
 
+
+## App Integration
+
+Reranking is wired through `RetrievalService.search(...)` after hybrid fusion.
+Use these environment variables to enable it for the app:
+
+```text
+RERANK=true
+RERANKER=bge        # bge or qwen
+RERANK_TOP_N=5
+RERANK_DEVICE=      # optional: cuda, cpu, etc.
+RERANK_MAX_LENGTH=8192
+```
+
+Callers can still override the app default per request:
+
+```python
+retrieval.search("r_helpdesk", question, rerank=False)  # hybrid only
+retrieval.search("r_helpdesk", question, rerank=True)   # hybrid + reranker
+```
+
 ## Deployment Notes
 
 These rerankers lazy-load their Hugging Face models on the first `rerank()` call.
