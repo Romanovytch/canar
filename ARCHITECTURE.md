@@ -124,15 +124,42 @@ RetrievalProfile(
     score_threshold=0.35,
     source_filter="utilitr",
     fallback_top_k=5,
-    dense_top_k=10,
-    sparse_top_k=10,
-    fusion="rrf",
-    final_top_k=5,
-    rrf_k=60,
-    dense_weight=1.0,
-    sparse_weight=1.0,
+    dense=DenseRetrievalParams(top_k=10, min_score=0.35, max_kept=None),
+    sparse=SparseRetrievalParams(
+        top_k=10,
+        min_score_ratio=0.35,
+        gap_ratio=None,
+        max_kept=None,
+    ),
+    fusion=FusionRetrievalParams(
+        method="rrf",
+        rrf_k=60,
+        weights={"dense": 1.0, "sparse": 1.0},
+        final_top_k=5,
+    ),
 )
 ```
+
+Parent-child implemented profile:
+
+```python
+RetrievalProfile(
+    name="parent_child_vector",
+    strategy="parent_child_vector",
+    collections=cfg.qdrant_collections,
+    top_k=5,
+    score_threshold=0.35,
+    source_filter="utilitr",
+    fallback_top_k=3,
+    vector_name=cfg.qdrant_dense_vector_name or None,
+    dense=DenseRetrievalParams(top_k=5, min_score=0.35, max_kept=None),
+    parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
+)
+```
+
+Parent-child hybrid uses the same `dense`, `sparse`, and `fusion` blocks as `hybrid`
+for child retrieval, plus `parent_child` for parent collection lookup. The legacy flat
+`parent_collection_suffix` field is still resolved for compatibility.
 
 Sparse and hybrid retrieval assume compatible sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
 
@@ -174,9 +201,11 @@ The `hybrid` strategy runs dense and sparse retrieval separately, then fuses bot
 score += retriever_weight / (rrf_k + rank)
 ```
 
-Ranks are one-based to preserve the original local fusion behavior. With the default `dense_weight=1.0`, `sparse_weight=1.0`, and `rrf_k=60`, hybrid retrieval behaves like equal-weight RRF. Raising `dense_weight` favors semantic matches; raising `sparse_weight` favors exact or lexical matches.
+Ranks are one-based to preserve the original local fusion behavior. With the default `fusion.weights={"dense": 1.0, "sparse": 1.0}` and `fusion.rrf_k=60`, hybrid retrieval behaves like equal-weight RRF. Raising the dense weight favors semantic matches; raising the sparse weight favors exact or lexical matches.
 
-The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weights are `[dense_weight, sparse_weight]`. This mirrors Qdrant weighted RRF semantics, where weights must follow the prefetch order exactly.
+The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weights are `[fusion.weights["dense"], fusion.weights["sparse"]]`. This mirrors Qdrant weighted RRF semantics, where weights must follow the prefetch order exactly.
+
+The legacy flat hybrid fields (`dense_top_k`, `sparse_top_k`, `fusion`, `final_top_k`, `rrf_k`, `dense_weight`, `sparse_weight`) are still accepted and resolved into nested parameter blocks for compatibility.
 
 ## Data model
 
@@ -190,6 +219,34 @@ class SparseVector:
 
 
 @dataclass(frozen=True)
+class DenseRetrievalParams:
+    top_k: int = 5
+    min_score: float | None = None
+    max_kept: int | None = None
+
+
+@dataclass(frozen=True)
+class SparseRetrievalParams:
+    top_k: int = 5
+    min_score_ratio: float | None = None
+    gap_ratio: float | None = None
+    max_kept: int | None = None
+
+
+@dataclass(frozen=True)
+class FusionRetrievalParams:
+    method: str = "rrf"
+    rrf_k: int = 60
+    weights: dict[str, float] = field(default_factory=dict)
+    final_top_k: int = 5
+
+
+@dataclass(frozen=True)
+class ParentChildRetrievalParams:
+    parent_collection_suffix: str = "_parent"
+
+
+@dataclass(frozen=True)
 class RetrievalProfile:
     name: str
     strategy: str
@@ -199,13 +256,17 @@ class RetrievalProfile:
     source_filter: str | None = "utilitr"
     fallback_top_k: int = 3
     vector_name: str | None = None
+    dense: DenseRetrievalParams | None = None
+    sparse: SparseRetrievalParams | None = None
+    fusion: FusionRetrievalParams | str | None = None
     dense_top_k: int | None = None
     sparse_top_k: int | None = None
-    fusion: str | None = None
     final_top_k: int | None = None
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 1.0
+    parent_child: ParentChildRetrievalParams | None = None
+    parent_collection_suffix: str = "_parent"
 
 
 @dataclass(frozen=True)
