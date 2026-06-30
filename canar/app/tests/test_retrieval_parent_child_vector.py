@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
+from canar.app.retrieval.models import (
+    ParentChildRetrievalParams,
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+)
 from canar.app.retrieval.strategies.parent_child import ParentChildStrategy
 
 
@@ -77,3 +82,54 @@ def test_parent_child_vector_fetches_parents_and_populates_generation_text():
         "parent two text",
         "unmapped child",
     ]
+
+
+def test_parent_child_uses_structured_parent_collection_suffix():
+    adapter = FakeAdapter()
+    adapter.existing_collections = {"children_a_parents"}
+    child_strategy = FakeChildStrategy()
+    profile = RetrievalProfile(
+        name="parent_child_vector",
+        strategy="parent_child_vector",
+        collections=("children_a", "children_b"),
+        parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parents"),
+    )
+    strategy = ParentChildStrategy(profile, child_strategy, adapter)
+
+    strategy.search(
+        RetrievalQuery(
+            text="question",
+            profile_name="parent_child_vector",
+            dense_vector=[0.1],
+        )
+    )
+
+    assert adapter.collection_checks == ["children_a_parents", "children_b_parents"]
+    assert adapter.parent_fetches == [("children_a_parents", ["parent-1", "parent-2"])]
+
+
+def test_parent_child_legacy_suffix_resolves_for_backward_compatibility():
+    profile = RetrievalProfile(
+        name="legacy_parent_child",
+        strategy="parent_child_vector",
+        collections=("children_a",),
+        parent_collection_suffix="_parents",
+    )
+
+    assert profile.parent_child_params() == ParentChildRetrievalParams(
+        parent_collection_suffix="_parents",
+    )
+
+
+def test_parent_child_structured_params_win_over_legacy_suffix():
+    profile = RetrievalProfile(
+        name="parent_child",
+        strategy="parent_child_vector",
+        collections=("children_a",),
+        parent_child=ParentChildRetrievalParams(parent_collection_suffix="_structured"),
+        parent_collection_suffix="_legacy",
+    )
+
+    assert profile.parent_child_params() == ParentChildRetrievalParams(
+        parent_collection_suffix="_structured",
+    )

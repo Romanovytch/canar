@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery, SparseVector
+from canar.app.retrieval.models import (
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+    SparseRetrievalParams,
+    SparseVector,
+)
 from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy
 
 
@@ -60,6 +66,43 @@ def test_simple_sparse_normalizes_sorts_and_prunes_hits():
         ("docs_a", sparse_vector, 5, "utilitr", "text-sparse"),
         ("docs_b", sparse_vector, 5, "utilitr", "text-sparse"),
     ]
+
+
+def test_simple_sparse_uses_sparse_params_for_ratio_gap_and_max_kept():
+    profile = RetrievalProfile(
+        name="hybrid_sparse",
+        strategy="simple_sparse",
+        collections=("docs",),
+        sparse=SparseRetrievalParams(
+            top_k=4,
+            min_score_ratio=0.5,
+            gap_ratio=0.3,
+            max_kept=2,
+        ),
+        vector_name="text-sparse",
+    )
+    adapter = FakeSparseAdapter(
+        {
+            "docs": [
+                RetrievalHit(text="top", collection="docs", score=10.0, score_norm=0),
+                RetrievalHit(text="second", collection="docs", score=8.0, score_norm=0),
+                RetrievalHit(text="third", collection="docs", score=6.0, score_norm=0),
+                RetrievalHit(text="low", collection="docs", score=1.0, score_norm=0),
+            ]
+        }
+    )
+    sparse_vector = SparseVector(indices=[1], values=[1.0])
+
+    hits = SimpleSparseStrategy(profile, adapter).search(
+        RetrievalQuery(
+            text="question",
+            profile_name="hybrid_sparse",
+            sparse_vector=sparse_vector,
+        )
+    )
+
+    assert [hit.text for hit in hits] == ["top", "second"]
+    assert adapter.calls == [("docs", sparse_vector, 4, "utilitr", "text-sparse")]
 
 
 def test_simple_sparse_keeps_top_fallback_when_no_hits_survive_threshold():
