@@ -26,6 +26,10 @@ from .registry import (
     supported_formats,
 )
 
+# Import loader modules for their registration side effect, so the extensions
+# they handle are known as soon as the package is imported.
+from . import csv_loader  # noqa: E402,F401
+
 __all__ = [
     "DatasetItem",
     "UnsupportedDatasetFormat",
