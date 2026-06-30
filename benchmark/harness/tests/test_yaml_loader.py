@@ -4,7 +4,6 @@ loads the real mini_client datasets when present."""
 from pathlib import Path
 
 import pytest
-
 from dataset_loaders import load_dataset
 from dataset_loaders.yaml_loader import load_yaml
 

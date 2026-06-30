@@ -3,7 +3,6 @@ and a clear error for unsupported formats. Uses dummy loaders so it tests the
 registry itself, independent of the real CSV/YAML loaders (Tasks 3-4)."""
 
 import pytest
-
 from dataset_loaders import registry
 from dataset_loaders.item import DatasetItem
 from dataset_loaders.registry import (

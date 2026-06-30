@@ -4,7 +4,6 @@ the real benchmark dataset still loads cleanly."""
 from pathlib import Path
 
 import pytest
-
 from dataset_loaders import load_dataset
 from dataset_loaders.csv_loader import load_csv
 

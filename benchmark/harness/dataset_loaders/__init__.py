@@ -17,6 +17,12 @@ Modelled on AgoRa's ``agora/sources`` loader/registry pattern.
 
 from __future__ import annotations
 
+# Import loader modules for their registration side effect, so the extensions
+# they handle are known as soon as the package is imported.
+from . import (
+    csv_loader,  # noqa: E402,F401
+    yaml_loader,  # noqa: E402,F401
+)
 from .item import DatasetItem
 from .registry import (
     UnsupportedDatasetFormat,
@@ -25,11 +31,6 @@ from .registry import (
     register_loader,
     supported_formats,
 )
-
-# Import loader modules for their registration side effect, so the extensions
-# they handle are known as soon as the package is imported.
-from . import csv_loader  # noqa: E402,F401
-from . import yaml_loader  # noqa: E402,F401
 
 __all__ = [
     "DatasetItem",
