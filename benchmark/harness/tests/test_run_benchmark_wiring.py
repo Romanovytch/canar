@@ -1,0 +1,102 @@
+"""Task 6 — run_benchmark consumes the loader output (not a raw CSV): it runs
+for both CSV and YAML, and YAML metadata reaches the saved metrics.csv. RAGAS is
+stubbed so the test needs no judge LLM."""
+
+import pandas as pd
+import pytest
+import ragas_bench
+from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark
+
+
+class _FakeResult:
+    def __init__(self, df):
+        self._df = df
+
+    def to_pandas(self):
+        return self._df
+
+
+@pytest.fixture
+def stub_ragas(monkeypatch):
+    """Replace ragas' EvaluationDataset + evaluate so no judge LLM is needed.
+
+    EvaluationDataset becomes identity (returns the sample list); evaluate
+    returns one row per sample with a single dummy score column.
+    """
+    monkeypatch.setattr(ragas_bench, "EvaluationDataset", lambda *, samples: samples)
+
+    def fake_evaluate(*, dataset, metrics, llm, embeddings, run_config):
+        samples = dataset  # the identity EvaluationDataset above
+        df = pd.DataFrame(
+            {
+                "user_input": [s.user_input for s in samples],
+                "retrieved_contexts": [s.retrieved_contexts for s in samples],
+                "response": [s.response for s in samples],
+                "reference": [s.reference for s in samples],
+                "faithfulness": [1.0] * len(samples),
+            }
+        )
+        return _FakeResult(df)
+
+    monkeypatch.setattr(ragas_bench, "evaluate", fake_evaluate)
+
+
+def _pipeline(question):
+    return PipelineOutput(answer="ans", contexts=["ctx"], paths=["some/path.qmd"])
+
+
+def _run(dataset_path, tmp_path, label):
+    return run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=dataset_path),
+        pipeline=_pipeline,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label=label,
+        group_dir=tmp_path,  # deterministic out dir: tmp_path/<label>/
+    )
+
+
+def test_csv_dataset_runs_with_no_metadata_columns(stub_ragas, tmp_path):
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+    out_df = _run(csv, tmp_path, "csv")
+
+    assert list(out_df["user_input"]) == ["q1"]
+    assert "hit_rate" in out_df.columns          # retrieval metrics computed
+    assert out_df["hit_rate"].iloc[0] == 1.0     # path matched the expected source
+
+    # No regression: a CSV carries no metadata, so metrics.csv gains no extra cols.
+    metrics = pd.read_csv(tmp_path / "csv" / "metrics.csv")
+    assert "question_type" not in metrics.columns
+
+
+def test_yaml_metadata_reaches_metrics_csv(stub_ragas, tmp_path):
+    yaml_text = """
+dataset_id: d
+document_group: g
+questions:
+  - id: q1
+    question: "What is X?"
+    question_type: exact_lookup
+    expected_answer: "X is Y."
+    expected_source_files: ["some/path.qmd"]
+    difficulty: easy
+"""
+    ds = tmp_path / "ds.yaml"
+    ds.write_text(yaml_text, encoding="utf-8")
+    out_df = _run(ds, tmp_path, "yaml")
+
+    # scalar metadata surfaced as columns on the result frame
+    for col in ("id", "question_type", "difficulty", "dataset_id", "document_group"):
+        assert col in out_df.columns
+    assert out_df["question_type"].iloc[0] == "exact_lookup"
+
+    # and persisted to metrics.csv (the reporting layer)
+    metrics = pd.read_csv(tmp_path / "yaml" / "metrics.csv")
+    assert metrics["question_type"].iloc[0] == "exact_lookup"
+    assert metrics["difficulty"].iloc[0] == "easy"
