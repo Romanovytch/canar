@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from canar.app.retrieval.models import RetrievalProfile
+from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    FusionRetrievalParams,
+    ParentChildRetrievalParams,
+    RetrievalProfile,
+    SparseRetrievalParams,
+)
 
 AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
     "r_helpdesk": "simple_vector",
@@ -43,6 +49,14 @@ def build_retrieval_profiles(
             source_filter="utilitr",
             fallback_top_k=3,
             vector_name=dense_vector_name or None,
+            dense=DenseRetrievalParams(
+                top_k=5,
+                min_score=0.35,
+                max_kept=None,
+            ),
+            parent_child=ParentChildRetrievalParams(
+                parent_collection_suffix="_parent",
+            ),
         ),
         "hybrid": RetrievalProfile(
             name="hybrid",
@@ -53,13 +67,23 @@ def build_retrieval_profiles(
             source_filter="utilitr",
             fallback_top_k=5,
             vector_name=sparse_vector_name or None,
-            dense_top_k=10,
-            sparse_top_k=10,
-            fusion="rrf",
-            final_top_k=5,
-            rrf_k=60,
-            dense_weight=1.0,
-            sparse_weight=1.0,
+            dense=DenseRetrievalParams(
+                top_k=10,
+                min_score=0.35,
+                max_kept=None,
+            ),
+            sparse=SparseRetrievalParams(
+                top_k=10,
+                min_score_ratio=0.35,
+                gap_ratio=None,
+                max_kept=None,
+            ),
+            fusion=FusionRetrievalParams(
+                method="rrf",
+                rrf_k=60,
+                weights={"dense": 1.0, "sparse": 1.0},
+                final_top_k=5,
+            ),
         ),
         "parent_child_hybrid": RetrievalProfile(
             name="parent_child_hybrid",
@@ -70,9 +94,25 @@ def build_retrieval_profiles(
             source_filter="utilitr",
             fallback_top_k=5,
             vector_name=sparse_vector_name or None,
-            dense_top_k=10,
-            sparse_top_k=10,
-            fusion="rrf",
-            final_top_k=5,
+            dense=DenseRetrievalParams(
+                top_k=10,
+                min_score=0.35,
+                max_kept=None,
+            ),
+            sparse=SparseRetrievalParams(
+                top_k=10,
+                min_score_ratio=0.35,
+                gap_ratio=None,
+                max_kept=None,
+            ),
+            fusion=FusionRetrievalParams(
+                method="rrf",
+                rrf_k=60,
+                weights={"dense": 1.0, "sparse": 1.0},
+                final_top_k=5,
+            ),
+            parent_child=ParentChildRetrievalParams(
+                parent_collection_suffix="_parent",
+            ),
         ),
     }
