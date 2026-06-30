@@ -87,7 +87,7 @@ cfg.validate()
 BENCH = load_config(BENCH_DIR / "config.yaml")
 
 DATASET = DatasetSpec(
-    path=BENCH_DIR / BENCH.dataset,   # columns: query, grading_notes, source_fiche
+    path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
     limit=BENCH.limit,                # null in YAML = all questions
 )
 
