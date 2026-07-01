@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from canar.app.retrieval.ranking.base import Reranker
-from canar.app.retrieval.ranking.bge_reranker import BGEReranker
-from canar.app.retrieval.ranking.qwen_reranker import QwenReranker
+from canar.app.retrieval.rerank.rerankers.base import Reranker
+from canar.app.retrieval.rerank.rerankers.bge_reranker import BGEReranker
+from canar.app.retrieval.rerank.rerankers.qwen_reranker import QwenReranker
 
 
 def build_reranker(

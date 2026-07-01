@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from canar.app.retrieval.ranking._candidate_utils import RerankerCandidateMixin
+from canar.app.retrieval.rerank.rerankers._candidate_utils import RerankerCandidateMixin
 
 
 class BGEReranker(RerankerCandidateMixin):

@@ -14,7 +14,7 @@ return the candidates sorted by descending reranker score.
 Both classes expose the same public API:
 
 ```python
-from canar.app.retrieval.ranking import BGEReranker
+from canar.app.retrieval.rerank.rerankers import BGEReranker
 
 reranker = BGEReranker()
 results = reranker.rerank(query=query, candidates=hits, top_n=10)
@@ -31,9 +31,9 @@ Use these environment variables to enable it for the app:
 
 ```text
 RERANK=true
-RERANKER=bge        # bge or qwen
+RERANKER=bge        # bge or qwen; bge is the default
 RERANK_TOP_N=5
-RERANK_DEVICE=      # optional: cuda, cpu, etc.
+RERANK_DEVICE=cuda  # cuda by default; set to cpu only for local smoke checks
 RERANK_MAX_LENGTH=8192
 ```
 
@@ -44,6 +44,11 @@ retrieval.search("r_helpdesk", question, rerank=False)  # hybrid only
 retrieval.search("r_helpdesk", question, rerank=True)   # hybrid + reranker
 ```
 
+The reranker wrapper is built from config during app setup even when
+`RERANK=false`, but model weights are still lazy-loaded only on the first
+reranked query. This keeps ranking dependencies installable/configurable before
+any model download is triggered.
+
 ## Deployment Notes
 
 These rerankers lazy-load their Hugging Face models on the first `rerank()` call.
@@ -53,7 +58,6 @@ project dependency file, such as the root `requirements.txt` or `pyproject.toml`
 ```text
 torch>=2.6,<3.0
 transformers>=4.51,<5.0
-sentence-transformers>=4.1,<6.0
 accelerate>=0.34,<2.0
 safetensors>=0.4.5,<1.0
 ```

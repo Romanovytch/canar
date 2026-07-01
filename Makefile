@@ -1,6 +1,10 @@
 SHELL := /bin/bash
 
-.PHONY: help up down reset logs venv install run test lint format format-check ci
+VENV := .venv_canar
+PIP_CACHE_DIR := /mnt/backup/cereq/pip-cache
+PIP_TMP_DIR := /mnt/backup/cereq/pip-tmp
+
+.PHONY: help up down reset logs venv install install-torch run test lint format format-check ci
 
 help:
 	@echo "Targets:"
@@ -8,8 +12,9 @@ help:
 	@echo "  make down          - Stop containers"
 	@echo "  make reset         - Stop + remove volumes"
 	@echo "  make logs          - Follow docker logs"
-	@echo "  make venv          - Create venv (.venv)"
+	@echo "  make venv          - Create venv (.venv_canar)"
 	@echo "  make install       - Install CanaR (editable) + dev tools"
+	@echo "  make install-torch - Install CUDA 12.8 PyTorch wheel"
 	@echo "  make run           - Run CanaR (entrypoint or Streamlit fallback)"
 	@echo "  make test          - Run tests (pytest)"
 	@echo "  make lint          - Run ruff lint (check)"
@@ -30,24 +35,42 @@ logs:
 	cd infra && docker compose logs -f --tail=200
 
 venv:
-	python -m venv .venv
+	python -m venv $(VENV)
 
 install:
-	. .venv/bin/activate && pip install -U pip && pip install -e ".[dev]"
+	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
+	TMPDIR=$(PIP_TMP_DIR) \
+	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
+	$(VENV)/bin/pip install -U pip
+	TMPDIR=$(PIP_TMP_DIR) \
+	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
+	$(VENV)/bin/pip install -e ".[dev]"
+
+install-torch:
+	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
+	TMPDIR=$(PIP_TMP_DIR) \
+	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
+	$(VENV)/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
+
+install-rerank:
+	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
+	TMPDIR=$(PIP_TMP_DIR) \
+	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
+	$(VENV)/bin/pip install -e ".[rerank]"
 
 run:
-	. .venv/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
+	. $(VENV)/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8530)
 
 test:
-	. .venv/bin/activate && pytest -q
+	. $(VENV)/bin/activate && pytest -q
 
 lint:
-	. .venv/bin/activate && ruff check .
+	. $(VENV)/bin/activate && ruff check .
 
 format:
-	. .venv/bin/activate && ruff format . && ruff check . --fix
+	. $(VENV)/bin/activate && ruff format . && ruff check . --fix
 
 format-check:
-	. .venv/bin/activate && ruff format --check .
+	. $(VENV)/bin/activate && ruff format --check .
 
 ci: lint format-check test

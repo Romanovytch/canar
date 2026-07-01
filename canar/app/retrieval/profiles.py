@@ -9,7 +9,7 @@ from canar.app.retrieval.models import (
 )
 
 AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
-    "r_helpdesk": "simple_vector",
+    "r_helpdesk": "hybrid",
     "sas_to_r": None,
 }
 

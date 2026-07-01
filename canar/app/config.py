@@ -29,7 +29,7 @@ class AppConfig:
     rerank_enabled: bool = _env_bool("RERANK", False)
     reranker_name: str = os.getenv("RERANKER", "bge")
     rerank_top_n: int = int(os.getenv("RERANK_TOP_N", "5"))
-    rerank_device: str | None = os.getenv("RERANK_DEVICE", "") or None
+    rerank_device: str | None = os.getenv("RERANK_DEVICE", "cuda") or None
     rerank_max_length: int = int(os.getenv("RERANK_MAX_LENGTH", "8192"))
 
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")

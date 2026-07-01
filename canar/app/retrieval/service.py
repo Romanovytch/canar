@@ -8,7 +8,7 @@ from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
 from canar.app.retrieval.expanders import HitExpander, ParentChildExpander
 from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
 from canar.app.retrieval.profiles import AGENT_RETRIEVAL_PROFILES, build_retrieval_profiles
-from canar.app.retrieval.ranking import Reranker, build_reranker
+from canar.app.retrieval.rerank.rerankers import Reranker, build_reranker
 from canar.app.retrieval.strategies.base import RetrievalStrategy
 from canar.app.retrieval.strategies.hybrid import HybridStrategy
 from canar.app.retrieval.strategies.simple_sparse import SimpleSparseStrategy
@@ -53,14 +53,10 @@ class RetrievalService:
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
 
-        reranker = (
-            build_reranker(
-                cfg.reranker_name,
-                device=cfg.rerank_device,
-                max_length=cfg.rerank_max_length,
-            )
-            if cfg.rerank_enabled
-            else None
+        reranker = build_reranker(
+            cfg.reranker_name,
+            device=cfg.rerank_device,
+            max_length=cfg.rerank_max_length,
         )
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)

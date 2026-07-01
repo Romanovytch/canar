@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from canar.app.retrieval.ranking._candidate_utils import RerankerCandidateMixin
+from canar.app.retrieval.rerank.rerankers._candidate_utils import RerankerCandidateMixin
 
 
 class QwenReranker(RerankerCandidateMixin):
@@ -22,11 +22,11 @@ class QwenReranker(RerankerCandidateMixin):
         model_name: str = DEFAULT_MODEL_NAME,
         *,
         instruction: str | None = None,
-        #higher max_length = more context per candidate, more memory/time
-        #lower max_length = faster, less memory, but more truncation risk
+        # Higher max_length = more context per candidate, more memory/time
+        # Lower max_length = faster, less memory, but more truncation risk
         max_length: int = 8192,
         device: str | None = None,
-        #cuda for gpu, cpu for cpu, or None to let torch decide
+        # cuda for gpu, cpu for cpu, or None to let torch decide
     ) -> None:
         # Store model settings without loading model weights during construction.
         self.model_name = model_name
