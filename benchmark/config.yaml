@@ -12,7 +12,8 @@
 #                 from the product's profiles.py — the benchmark measures the
 #                 real strategy, not an override.
 #
-# Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS.
+# Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS,
+# MEASURE_RESOURCES.
 
 run:
   dataset: datasets/utilitr_questions.csv   # path relative to benchmark/
@@ -20,6 +21,7 @@ run:
   limit: null                  # null = all 12 questions; set an int for a quick pass
   judge_model: qwen2.5:7b      # non-reasoning judge (fast, no timeouts); null = product LLM
   gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers
+  measure_resources: false     # true = also measure CPU/memory/GPU cost per phase (env: MEASURE_RESOURCES)
 
 # Expected environment. The preflight checks canar/.env against these and aborts
 # on a mismatch, so a result is only ever produced with the intended embedding

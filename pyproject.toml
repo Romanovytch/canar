@@ -49,5 +49,10 @@ benchmark = [
   "langchain-openai>=0.2",
   "pandas>=2.0",
   "pyyaml>=6.0",
-  "langchain-community>=0.3.9,<0.4.2"
+  "langchain-community>=0.3.9,<0.4.2",
+  "psutil>=5.9",              # optional resource benchmark (CPU/memory)
   ]
+
+# GPU stats for the resource benchmark (device-level). Optional: without it the
+# GPU columns simply stay empty. Install with: pip install -e ".[benchmark-gpu]"
+benchmark-gpu = ["nvidia-ml-py>=12.0"]
