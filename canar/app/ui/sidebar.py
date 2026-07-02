@@ -4,15 +4,21 @@ import streamlit as st
 
 from ..state import DB
 
-AGENT_LABELS = {
-    "r_helpdesk": "Assistant R",
-    "sas_to_r": "Traduction SAS → R",
-}
+from canar.app.chatbots.chatbot_config import ChatbotConfig
+
+# AGENT_LABELS = {
+#     "r_helpdesk": "Assistant R",
+#     "sas_to_r": "Traduction SAS → R",
+# }
 
 
 def sidebar(
-    db: DB, user_id: int, current_conv_id: int | None, agent_options: list[str], current_agent: str
+    db: DB, user_id: int, current_conv_id: int | None, agent_options: list[str]
+    , current_agent: str, chatbot_list: list[ChatbotConfig]
 ):
+    
+    AGENT_LABELS = { bot.id:bot.name for bot in chatbot_list }
+
     st.sidebar.header("Conversations")
 
     # Create new (compact)
