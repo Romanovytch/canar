@@ -43,6 +43,29 @@ class PipelineOutput:
     paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
     retrieval_latency_s: float | None = None         # time spent retrieving
     generation_latency_s: float | None = None        # time spent generating the answer
+    # Optional resource cost (only set when the resource flag is on; see
+    # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
+    retrieval_cpu_s: float | None = None
+    retrieval_peak_rss_mb: float | None = None
+    generation_cpu_s: float | None = None
+    generation_peak_rss_mb: float | None = None
+    gpu_util_pct: float | None = None
+    gpu_mem_mb: float | None = None
+
+
+# Per-question performance measurements carried on PipelineOutput. Each becomes a
+# column only when at least one question reports a value, so a run without the
+# resource flag adds no columns (latencies are always present, so they always do).
+PERF_FIELDS = (
+    "retrieval_latency_s",
+    "generation_latency_s",
+    "retrieval_cpu_s",
+    "retrieval_peak_rss_mb",
+    "generation_cpu_s",
+    "generation_peak_rss_mb",
+    "gpu_util_pct",
+    "gpu_mem_mb",
+)
 
 
 @dataclass
@@ -139,8 +162,9 @@ def run_benchmark(
     track_hits = dataset.source_col is not None
     print(f"{name}: {len(items)} questions\n")
 
-    samples, retr_rows, all_paths, latencies, gen_latencies = [], [], [], [], []
+    samples, retr_rows, all_paths = [], [], []
     metadatas = []                       # per-question extras (rich YAML datasets)
+    perf = {name: [] for name in PERF_FIELDS}  # per-question latency/resource values
     for item in items:
         question = item.query
         print(f"Q: {question}")
@@ -151,8 +175,8 @@ def run_benchmark(
             out = PipelineOutput("", [], [])
 
         metadatas.append(item.metadata)
-        latencies.append(out.retrieval_latency_s)
-        gen_latencies.append(out.generation_latency_s)
+        for name in PERF_FIELDS:
+            perf[name].append(getattr(out, name))
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
             m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
@@ -190,11 +214,12 @@ def run_benchmark(
         for key, value in tag.items():
             out_df[key] = value
         meta_cols |= set(tag)
-    # latencies are always available (deterministic, no source column needed)
-    if any(latency is not None for latency in latencies):
-        out_df["retrieval_latency_s"] = latencies
-    if any(latency is not None for latency in gen_latencies):
-        out_df["generation_latency_s"] = gen_latencies
+    # Latency/resource columns: emit one per field that has any value. Latencies
+    # are always present; resource fields only when the resource flag was on.
+    for name in PERF_FIELDS:
+        values = perf[name]
+        if any(v is not None for v in values):
+            out_df[name] = values
     if track_hits:
         # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
         for metric_name in retr_rows[0]:
