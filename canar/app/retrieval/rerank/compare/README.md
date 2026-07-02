@@ -30,6 +30,10 @@ python canar/app/retrieval/rerank/compare/compare.py "ma question" --collection 
 python canar/app/retrieval/rerank/compare/compare.py "ma question" --qdrant-url http://localhost:6360
 ```
 
+`--top-n` only changes how many reranked results are printed/returned. It does
+not increase the hybrid candidate pool sent to the reranker; that pool is set by
+the retrieval profile's `rerank_candidate_top_k` value.
+
 ## How to Read the Output
 
 The script prints one ranked list per retrieval mode:

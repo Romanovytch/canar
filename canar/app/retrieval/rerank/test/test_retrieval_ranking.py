@@ -80,6 +80,7 @@ def test_reranker_rejects_blank_query_negative_top_n_and_missing_text():
 def test_build_reranker_defaults_to_gpu_ready_bge_and_rejects_unknown_name():
     bge = build_reranker("bge", device="cuda", max_length=512)
     qwen = build_reranker("qwen", device="cuda", max_length=256)
+    custom_bge = build_reranker("bge", model_name="custom/bge", device="cpu")
 
     assert isinstance(bge, BGEReranker)
     assert bge.device == "cuda"
@@ -87,5 +88,8 @@ def test_build_reranker_defaults_to_gpu_ready_bge_and_rejects_unknown_name():
     assert isinstance(qwen, QwenReranker)
     assert qwen.device == "cuda"
     assert qwen.max_length == 256
+    assert isinstance(custom_bge, BGEReranker)
+    assert custom_bge.model_name == "custom/bge"
+    assert custom_bge.device == "cpu"
     with pytest.raises(ValueError, match="Unsupported reranker"):
         build_reranker("cross-encoder")

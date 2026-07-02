@@ -160,6 +160,7 @@ For the compare script, these rerank variables are optional. They are mainly nee
 ```env
 RERANK=true
 RERANKER=bge
+RERANK_MODEL_NAME=
 RERANK_DEVICE=cuda
 RERANK_TOP_N=5
 RERANK_MAX_LENGTH=8192
@@ -264,6 +265,11 @@ python canar/app/retrieval/rerank/compare/compare.py \
   "comment filtrer un dataframe en R ?" \
   --top-n 10
 ```
+
+This only changes the returned/printed reranker output count. It does not
+increase the hybrid candidate pool; that is controlled by
+`rerank_candidate_top_k` in the retrieval profile. Keep `RERANK_TOP_N` less than
+or equal to that candidate-pool size.
 
 Override the collection:
 

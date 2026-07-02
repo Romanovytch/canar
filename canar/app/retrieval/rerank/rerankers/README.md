@@ -32,7 +32,8 @@ Use these environment variables to enable it for the app:
 ```text
 RERANK=true
 RERANKER=bge        # bge or qwen; bge is the default
-RERANK_TOP_N=5
+RERANK_MODEL_NAME=   # optional explicit Hugging Face model override
+RERANK_TOP_N=5       # output count, not the retrieval candidate-pool size
 RERANK_DEVICE=cuda  # cuda by default; set to cpu only for local smoke checks
 RERANK_MAX_LENGTH=8192
 ```
@@ -44,10 +45,14 @@ retrieval.search("r_helpdesk", question, rerank=False)  # hybrid only
 retrieval.search("r_helpdesk", question, rerank=True)   # hybrid + reranker
 ```
 
-The reranker wrapper is built from config during app setup even when
-`RERANK=false`, but model weights are still lazy-loaded only on the first
-reranked query. This keeps ranking dependencies installable/configurable before
-any model download is triggered.
+The reranker wrapper is built only when `RERANK=true`. Model weights are still
+lazy-loaded only on the first reranked query, so startup does not download or load
+the Hugging Face model.
+
+`RERANK_TOP_N` only controls how many reranked hits are returned. The number of
+hybrid candidates sent into the reranker is controlled by the selected retrieval
+profile, for example `rerank_candidate_top_k=20` in `profiles.py`. Keep
+`RERANK_TOP_N <= rerank_candidate_top_k` for coherent results.
 
 ## Deployment Notes
 

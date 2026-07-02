@@ -9,7 +9,6 @@ from canar.app.config import AppConfig
 from canar.app.retrieval.models import RetrievalHit
 from canar.app.retrieval.service import RetrievalService
 
-
 DEFAULT_COLLECTION = "utilitr_bgem3_ds"
 DEFAULT_QDRANT_URL = "http://localhost:6360"
 
@@ -69,7 +68,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_QDRANT_URL,
         help="Qdrant URL.",
     )
-    parser.add_argument("--top-n", type=int, default=None, help="Override RERANK_TOP_N.")
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=None,
+        help="Override RERANK_TOP_N output count; does not increase candidate pool.",
+    )
     parser.add_argument("--device", default=None, help="Override RERANK_DEVICE.")
     parser.add_argument("--max-chars", type=int, default=280, help="Max text chars per hit.")
     parser.add_argument(

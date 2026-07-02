@@ -84,7 +84,7 @@ class RerankerCandidateMixin:
         enriched_candidate = copy.copy(candidate)
 
         try:
-            setattr(enriched_candidate, "rerank_score", float(score))
+            enriched_candidate.rerank_score = float(score)
             return enriched_candidate
         except FrozenInstanceError:
             # Frozen dataclasses without slots can carry an extra attribute on the copy.
@@ -116,4 +116,4 @@ class RerankerCandidateMixin:
         # Sorting supports both dict and object results from _with_rerank_score.
         if isinstance(candidate, Mapping):
             return float(candidate["rerank_score"])
-        return float(getattr(candidate, "rerank_score"))
+        return float(candidate.rerank_score)

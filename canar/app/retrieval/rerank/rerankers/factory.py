@@ -10,10 +10,19 @@ def build_reranker(
     *,
     device: str | None = None,
     max_length: int = 8192,
+    model_name: str | None = None,
 ) -> Reranker:
     normalized_name = name.strip().lower()
     if normalized_name == "bge":
-        return BGEReranker(device=device, max_length=max_length)
+        return BGEReranker(
+            model_name=model_name or BGEReranker.DEFAULT_MODEL_NAME,
+            device=device,
+            max_length=max_length,
+        )
     if normalized_name == "qwen":
-        return QwenReranker(device=device, max_length=max_length)
+        return QwenReranker(
+            model_name=model_name or QwenReranker.DEFAULT_MODEL_NAME,
+            device=device,
+            max_length=max_length,
+        )
     raise ValueError(f"Unsupported reranker: {name!r}")

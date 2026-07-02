@@ -59,6 +59,7 @@ class RetrievalProfile:
     dense_top_k: int | None = None
     sparse_top_k: int | None = None
     final_top_k: int | None = None
+    rerank_candidate_top_k: int | None = None
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 1.0
@@ -107,6 +108,7 @@ class RetrievalQuery:
     profile_name: str
     dense_vector: list[float] | None = None
     sparse_vector: SparseVector | None = None
+    candidate_top_k: int | None = None
 
 
 @dataclass(frozen=True)

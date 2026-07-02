@@ -53,11 +53,14 @@ class RetrievalService:
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
 
-        reranker = build_reranker(
-            cfg.reranker_name,
-            device=cfg.rerank_device,
-            max_length=cfg.rerank_max_length,
-        )
+        reranker = None
+        if cfg.rerank_enabled:
+            reranker = build_reranker(
+                cfg.reranker_name,
+                device=cfg.rerank_device,
+                max_length=cfg.rerank_max_length,
+                model_name=cfg.rerank_model_name or None,
+            )
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
         hybrid_profile = profiles["hybrid"]
@@ -132,15 +135,22 @@ class RetrievalService:
                 )
             sparse_vector = self.sparse_embed_client.embed_query(query)
 
+        should_rerank = self.rerank_enabled if rerank is None else rerank
+        supports_rerank = self._supports_rerank(profile)
+        candidate_top_k = (
+            profile.rerank_candidate_top_k if should_rerank and supports_rerank else None
+        )
         retrieval_query = RetrievalQuery(
             text=query,
             profile_name=profile.name,
             dense_vector=dense_vector,
             sparse_vector=sparse_vector,
+            candidate_top_k=candidate_top_k,
         )
+        hits = strategy.search(retrieval_query)
         hits = self._expand_hits(profile, hits)
         should_rerank = self.rerank_enabled if rerank is None else rerank
-        if should_rerank and self._supports_rerank(profile):
+        if should_rerank and supports_rerank:
             if self.reranker is None:
                 raise ValueError("rerank=True but no reranker is configured")
             return self.reranker.rerank(
