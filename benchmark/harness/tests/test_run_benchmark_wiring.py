@@ -100,3 +100,62 @@ questions:
     metrics = pd.read_csv(tmp_path / "yaml" / "metrics.csv")
     assert metrics["question_type"].iloc[0] == "exact_lookup"
     assert metrics["difficulty"].iloc[0] == "easy"
+
+
+RESOURCE_COLS = (
+    "retrieval_cpu_s",
+    "retrieval_peak_rss_mb",
+    "generation_cpu_s",
+    "generation_peak_rss_mb",
+    "gpu_util_pct",
+    "gpu_mem_mb",
+)
+
+
+def test_resource_fields_become_columns(stub_ragas, tmp_path):
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+
+    def pipeline_with_resources(question):
+        return PipelineOutput(
+            answer="ans",
+            contexts=["ctx"],
+            paths=["some/path.qmd"],
+            retrieval_latency_s=0.1,
+            generation_latency_s=0.2,
+            retrieval_cpu_s=0.05,
+            retrieval_peak_rss_mb=100.0,
+            generation_cpu_s=0.15,
+            generation_peak_rss_mb=120.0,
+            gpu_util_pct=10.0,
+            gpu_mem_mb=2048.0,
+        )
+
+    out_df = run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=csv),
+        pipeline=pipeline_with_resources,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label="res",
+        group_dir=tmp_path,
+    )
+    for col in RESOURCE_COLS:
+        assert col in out_df.columns
+    metrics = pd.read_csv(tmp_path / "res" / "metrics.csv")
+    assert metrics["gpu_mem_mb"].iloc[0] == 2048.0
+
+
+def test_no_resource_fields_no_columns(stub_ragas, tmp_path):
+    # The default _pipeline reports no latency/resource values (flag off).
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+    out_df = _run(csv, tmp_path, "nores")
+    for col in RESOURCE_COLS:
+        assert col not in out_df.columns
