@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery, SparseVector
+from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    ParentChildRetrievalParams,
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+    SparseRetrievalParams,
+    SparseVector,
+)
 from canar.app.retrieval.service import RetrievalService
 
 
@@ -133,10 +141,10 @@ def test_retrieval_service_embeds_dense_and_sparse_for_hybrid_profile():
                 name="hybrid",
                 strategy="hybrid",
                 collections=("docs",),
-                dense_top_k=10,
-                sparse_top_k=10,
+                dense_top_k=30,
+                sparse_top_k=30,
                 fusion="rrf",
-                final_top_k=5,
+                final_top_k=10,
             )
         },
         agent_profiles={"r_helpdesk": "hybrid"},
@@ -183,3 +191,60 @@ def test_retrieval_service_builds_hybrid_with_dense_and_sparse_vector_names(
     assert hybrid.sparse_strategy.profile.vector_name == "text-sparse"
     assert hybrid.dense_strategy.profile.top_k == 10
     assert hybrid.sparse_strategy.profile.top_k == 10
+    assert hybrid.dense_strategy.profile.dense == DenseRetrievalParams(
+        top_k=10,
+        min_score=0.35,
+        max_kept=None,
+    )
+    assert hybrid.sparse_strategy.profile.sparse == SparseRetrievalParams(
+        top_k=10,
+        min_score_ratio=0.35,
+        gap_ratio=None,
+        max_kept=None,
+    )
+
+
+def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
+    monkeypatch,
+):
+    class FakeQdrantAdapter:
+        def __init__(self, url: str, api_key: str | None = None):
+            self.url = url
+            self.api_key = api_key
+
+    import canar.app.retrieval.service as service_module
+
+    monkeypatch.setattr(service_module, "QdrantRetrievalAdapter", FakeQdrantAdapter)
+
+    service = RetrievalService.from_config(
+        FakeConfig(),
+        embed_client=FakeEmbedClient(),
+        sparse_embed_client=FakeSparseEmbedClient(),
+    )
+
+    parent_child_vector = service.strategies["parent_child_vector"]
+    parent_child_hybrid = service.strategies["parent_child_hybrid"]
+    parent_child_hybrid_child = parent_child_hybrid.child_strategy
+
+    assert parent_child_vector.profile.parent_child == ParentChildRetrievalParams(
+        parent_collection_suffix="_parent",
+    )
+    assert parent_child_vector.child_strategy.profile.dense == DenseRetrievalParams(
+        top_k=5,
+        min_score=0.35,
+        max_kept=None,
+    )
+    assert parent_child_hybrid.profile.parent_child == ParentChildRetrievalParams(
+        parent_collection_suffix="_parent",
+    )
+    assert parent_child_hybrid_child.dense_strategy.profile.dense == DenseRetrievalParams(
+        top_k=10,
+        min_score=0.35,
+        max_kept=None,
+    )
+    assert parent_child_hybrid_child.sparse_strategy.profile.sparse == SparseRetrievalParams(
+        top_k=10,
+        min_score_ratio=0.35,
+        gap_ratio=None,
+        max_kept=None,
+    )

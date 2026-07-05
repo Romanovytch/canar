@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
+from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+)
 from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy
 
 
@@ -54,6 +59,32 @@ def test_simple_vector_normalizes_sorts_and_prunes_hits():
         ("docs_a", [0.1, 0.2], 5, "utilitr", None),
         ("docs_b", [0.1, 0.2], 5, "utilitr", None),
     ]
+
+
+def test_simple_vector_uses_dense_params_for_top_k_threshold_and_max_kept():
+    profile = RetrievalProfile(
+        name="hybrid_dense",
+        strategy="simple_vector",
+        collections=("docs",),
+        dense=DenseRetrievalParams(top_k=4, min_score=0.25, max_kept=2),
+    )
+    adapter = FakeDenseAdapter(
+        {
+            "docs": [
+                RetrievalHit(text="top", collection="docs", score=10.0, score_norm=0),
+                RetrievalHit(text="second", collection="docs", score=8.0, score_norm=0),
+                RetrievalHit(text="third", collection="docs", score=5.0, score_norm=0),
+                RetrievalHit(text="low", collection="docs", score=1.0, score_norm=0),
+            ]
+        }
+    )
+
+    hits = SimpleVectorStrategy(profile, adapter).search(
+        RetrievalQuery(text="question", profile_name="hybrid_dense", dense_vector=[0.1])
+    )
+
+    assert [hit.text for hit in hits] == ["top", "second"]
+    assert adapter.calls == [("docs", [0.1], 4, "utilitr", None)]
 
 
 def test_simple_vector_keeps_top_fallback_when_all_hits_are_below_threshold():

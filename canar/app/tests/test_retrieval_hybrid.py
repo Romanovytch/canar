@@ -3,7 +3,15 @@ from __future__ import annotations
 import pytest
 
 from canar.app.retrieval.fusion.rrf import ReciprocalRankFusion
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery, SparseVector
+from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    FusionRetrievalParams,
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+    SparseRetrievalParams,
+    SparseVector,
+)
 from canar.app.retrieval.profiles import build_retrieval_profiles
 from canar.app.retrieval.strategies.hybrid import HybridStrategy
 
@@ -60,14 +68,53 @@ def test_hybrid_profile_is_registered_with_expected_parameters():
     assert profile.name == "hybrid"
     assert profile.strategy == "hybrid"
     assert profile.collections == ("docs",)
-    assert profile.dense_top_k == 10
-    assert profile.sparse_top_k == 10
-    assert profile.fusion == "rrf"
-    assert profile.final_top_k == 5
-    assert profile.rrf_k == 60
-    assert profile.dense_weight == 1.0
-    assert profile.sparse_weight == 1.0
+    assert profile.dense == DenseRetrievalParams(
+        top_k=10,
+        min_score=0.35,
+        max_kept=None,
+    )
+    assert profile.sparse == SparseRetrievalParams(
+        top_k=10,
+        min_score_ratio=0.35,
+        gap_ratio=None,
+        max_kept=None,
+    )
+    assert profile.fusion == FusionRetrievalParams(
+        method="rrf",
+        rrf_k=60,
+        weights={"dense": 1.0, "sparse": 1.0},
+        final_top_k=5,
+    )
     assert profile.vector_name == "text-sparse"
+
+
+def test_flat_hybrid_profile_fields_are_resolved_for_backward_compatibility():
+    profile = RetrievalProfile(
+        name="legacy_hybrid",
+        strategy="hybrid",
+        collections=("docs",),
+        top_k=5,
+        score_threshold=0.42,
+        dense_top_k=30,
+        sparse_top_k=20,
+        fusion="weighted_rrf",
+        final_top_k=8,
+        rrf_k=12,
+        dense_weight=1.5,
+        sparse_weight=2.0,
+    )
+
+    assert profile.dense_params() == DenseRetrievalParams(
+        top_k=30,
+        min_score=0.42,
+    )
+    assert profile.sparse_params() == SparseRetrievalParams(top_k=20)
+    assert profile.fusion_params() == FusionRetrievalParams(
+        method="weighted_rrf",
+        rrf_k=12,
+        weights={"dense": 1.5, "sparse": 2.0},
+        final_top_k=8,
+    )
 
 
 def test_simple_vector_profile_uses_dense_vector_name():
@@ -140,16 +187,20 @@ def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():
         name="hybrid",
         strategy="hybrid",
         collections=("docs",),
-        fusion="rrf",
-        final_top_k=2,
-        dense_weight=3.0,
-        sparse_weight=1.0,
+        fusion=FusionRetrievalParams(
+            method="weighted_rrf",
+            rrf_k=60,
+            weights={"dense": 3.0, "sparse": 1.0},
+            final_top_k=2,
+        ),
     )
     dense = FakeStrategy([hit("dense top")])
     sparse = FakeStrategy([hit("sparse top")])
     fusion = RecordingFusion()
 
-    HybridStrategy(profile, dense, sparse, fusion_strategies={"rrf": fusion}).search(hybrid_query())
+    HybridStrategy(profile, dense, sparse, fusion_strategies={"weighted_rrf": fusion}).search(
+        hybrid_query()
+    )
 
     ranked_lists, top_k, weights = fusion.calls[0]
     assert ranked_lists == [dense.hits, sparse.hits]
@@ -162,9 +213,11 @@ def test_hybrid_strategy_uses_profile_rrf_k():
         name="hybrid",
         strategy="hybrid",
         collections=("docs",),
-        fusion="rrf",
-        final_top_k=1,
-        rrf_k=2,
+        fusion=FusionRetrievalParams(
+            method="rrf",
+            rrf_k=2,
+            final_top_k=1,
+        ),
     )
     dense = FakeStrategy([hit("dense top")])
     sparse = FakeStrategy([])
@@ -203,8 +256,7 @@ def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
         name="hybrid",
         strategy="hybrid",
         collections=("docs",),
-        fusion="rrf",
-        final_top_k=2,
+        fusion=FusionRetrievalParams(method="rrf", final_top_k=2),
     )
     dense = FakeStrategy([hit("dense top"), hit("shared", metadata={"chunk_id": "same"})])
     sparse = FakeStrategy([hit("shared", metadata={"chunk_id": "same"}), hit("sparse exact")])
@@ -237,8 +289,7 @@ def test_hybrid_strategy_keeps_sparse_exact_match_in_fused_results():
         name="hybrid",
         strategy="hybrid",
         collections=("docs",),
-        fusion="rrf",
-        final_top_k=3,
+        fusion=FusionRetrievalParams(method="rrf", final_top_k=3),
     )
     dense = FakeStrategy([hit("semantic result one"), hit("semantic result two")])
     sparse = FakeStrategy([hit("exact variable_name result")])

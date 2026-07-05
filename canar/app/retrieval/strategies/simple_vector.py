@@ -15,12 +15,13 @@ class SimpleVectorStrategy:
         if query.dense_vector is None:
             raise ValueError("simple_vector retrieval requires a dense query vector")
 
+        params = self.profile.dense_params()
         all_hits: list[RetrievalHit] = []
         for collection in self.profile.collections:
             hits = self.adapter.search_dense(
                 collection=collection,
                 query_vector=query.dense_vector,
-                top_k=self.profile.top_k,
+                top_k=params.top_k,
                 source_filter=self.profile.source_filter,
                 vector_name=self.profile.vector_name,
             )
@@ -39,5 +40,12 @@ class SimpleVectorStrategy:
         return [replace(hit, score_norm=(hit.score - lo) / score_range) for hit in hits]
 
     def _prune_hits(self, hits: list[RetrievalHit]) -> list[RetrievalHit]:
-        pruned = [hit for hit in hits if hit.score_norm >= self.profile.score_threshold]
-        return pruned or hits[: self.profile.fallback_top_k]
+        params = self.profile.dense_params()
+        pruned = [
+            hit for hit in hits if params.min_score is None or hit.score_norm >= params.min_score
+        ]
+        if not pruned:
+            pruned = hits[: self.profile.fallback_top_k]
+        if params.max_kept is not None:
+            pruned = pruned[: params.max_kept]
+        return pruned

@@ -40,6 +40,7 @@ class ParentChildStrategy:
         ]
 
     def _existing_parent_collections(self, hits: list[RetrievalHit]) -> dict[str, str]:
+        params = self.profile.parent_child_params()
         collections_with_parent_ids = {
             hit.collection
             for hit in hits
@@ -47,7 +48,7 @@ class ParentChildStrategy:
         }
         parent_collections: dict[str, str] = {}
         for collection in sorted(collections_with_parent_ids):
-            parent_collection = f"{collection}_parent"
+            parent_collection = f"{collection}{params.parent_collection_suffix}"
             if self.adapter.collection_exists(parent_collection):
                 parent_collections[collection] = parent_collection
         return parent_collections
