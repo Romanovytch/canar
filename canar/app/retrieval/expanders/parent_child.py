@@ -3,24 +3,19 @@ from __future__ import annotations
 from dataclasses import replace
 
 from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
-from canar.app.retrieval.models import RetrievalHit, RetrievalProfile, RetrievalQuery
-from canar.app.retrieval.strategies.base import RetrievalStrategy
+from canar.app.retrieval.models import ParentChildRetrievalParams, RetrievalHit
 
 
-class ParentChildStrategy:
-    def __init__(
-        self,
-        profile: RetrievalProfile,
-        child_strategy: RetrievalStrategy,
-        adapter: QdrantRetrievalAdapter,
-    ):
-        self.profile = profile
-        self.child_strategy = child_strategy
+class ParentChildExpander:
+    def __init__(self, adapter: QdrantRetrievalAdapter):
         self.adapter = adapter
 
-    def search(self, query: RetrievalQuery) -> list[RetrievalHit]:
-        hits = self.child_strategy.search(query)
-        parent_collections = self._existing_parent_collections(hits)
+    def expand(
+        self,
+        hits: list[RetrievalHit],
+        params: ParentChildRetrievalParams,
+    ) -> list[RetrievalHit]:
+        parent_collections = self._existing_parent_collections(hits, params)
         parent_ids_by_collection = self._parent_ids_by_collection(hits, parent_collections)
         parent_texts = {
             collection: self.adapter.fetch_by_chunk_ids(
@@ -39,8 +34,11 @@ class ParentChildStrategy:
             for hit in hits
         ]
 
-    def _existing_parent_collections(self, hits: list[RetrievalHit]) -> dict[str, str]:
-        params = self.profile.parent_child_params()
+    def _existing_parent_collections(
+        self,
+        hits: list[RetrievalHit],
+        params: ParentChildRetrievalParams,
+    ) -> dict[str, str]:
         collections_with_parent_ids = {
             hit.collection
             for hit in hits
