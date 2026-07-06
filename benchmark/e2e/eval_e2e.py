@@ -71,7 +71,8 @@ from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import hardware_profile, probe  # noqa: E402
 
-from canar.app.agents import r_helpdesk  # noqa: E402
+
+from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
@@ -138,7 +139,7 @@ if MEASURE_RESOURCES:
 
 # CanaR clients (product code).
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
-chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
+chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model,{"reasoning_effort": cfg.llm_thinking})
 
 # Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
 # FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
@@ -159,6 +160,7 @@ judge_llm = ChatOpenAI(
     openai_api_base=cfg.llm_base,
     openai_api_key=cfg.llm_key or "EMPTY",
     temperature=0.0,
+    reasoning_effort=cfg.llm_thinking,   #
     extra_body={"keep_alive": "10m"},   # avoid Ollama unloading the model between judge calls
 )
 judge_embeddings = OpenAIEmbeddings(
@@ -270,8 +272,8 @@ def build_searcher(spec):
         sys.exit(f"Strategy {spec.strategy!r} not available in RetrievalService "
                  f"(have: {list(service.strategies)}).")
 
-    needs_dense = spec.strategy in {"simple_vector", "hybrid"}
-    needs_sparse = spec.strategy in {"simple_sparse", "hybrid"}
+    needs_dense = spec.strategy in {"simple_vector", "hybrid", "parent_child_hybrid"}
+    needs_sparse = spec.strategy in {"simple_sparse", "hybrid", "parent_child_hybrid"}
     if needs_sparse and sparse_embed is None:
         sys.exit(f"Profile uses {spec.strategy!r} but FASTEMBED_SPARSE_MODEL is unset "
                  "in canar/.env — no sparse encoder available.")
@@ -297,7 +299,7 @@ def make_pipeline(search):
             retrieval_latency_s = time.perf_counter() - t0
 
         # build the exact prompt the app sends (CoachR system prompt + [S1].. context)
-        messages, _src_list = r_helpdesk.build_messages(question, citations)
+        messages, _src_list = generic_agent.build_messages(question, citations)
 
         # generate with CanaR's ChatClient (the app streams; we join the stream).
         # max_tokens generous so the reasoning model finishes thinking AND answers.
