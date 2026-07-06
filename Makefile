@@ -1,9 +1,5 @@
 SHELL := /bin/bash
 
-VENV := .venv_canar
-PIP_CACHE_DIR := /mnt/backup/cereq/pip-cache
-PIP_TMP_DIR := /mnt/backup/cereq/pip-tmp
-
 .PHONY: help up down reset logs venv install install-torch run test lint format format-check ci
 
 help:
@@ -35,42 +31,30 @@ logs:
 	cd infra && docker compose logs -f --tail=200
 
 venv:
-	python -m venv $(VENV)
+	python -m venv .venv
 
 install:
-	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
-	TMPDIR=$(PIP_TMP_DIR) \
-	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
-	$(VENV)/bin/pip install -U pip
-	TMPDIR=$(PIP_TMP_DIR) \
-	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
-	$(VENV)/bin/pip install -e ".[dev]"
+	. .venv/bin/activate && pip install -U pip && pip install -e ".[dev]"
 
 install-torch:
-	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
-	TMPDIR=$(PIP_TMP_DIR) \
-	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
-	$(VENV)/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
+	. .venv/bin/activate &&pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
 
 install-rerank:
-	mkdir -p $(PIP_CACHE_DIR) $(PIP_TMP_DIR)
-	TMPDIR=$(PIP_TMP_DIR) \
-	PIP_CACHE_DIR=$(PIP_CACHE_DIR) \
-	$(VENV)/bin/pip install -e ".[rerank]"
+	. .venv/bin/activate && pip install -e ".[rerank]"
 
 run:
-	. $(VENV)/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8530)
+	. .venv/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8530)
 
 test:
-	. $(VENV)/bin/activate && pytest -q
+	. .venv/bin/activate && pytest -q
 
 lint:
-	. $(VENV)/bin/activate && ruff check .
+	. .venv/bin/activate && ruff check .
 
 format:
-	. $(VENV)/bin/activate && ruff format . && ruff check . --fix
+	. .venv/bin/activate && ruff format . && ruff check . --fix
 
 format-check:
-	. $(VENV)/bin/activate && ruff format --check .
+	. .venv/bin/activate && ruff format --check .
 
 ci: lint format-check test
