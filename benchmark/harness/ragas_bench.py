@@ -164,7 +164,7 @@ def run_benchmark(
 
     samples, retr_rows, all_paths = [], [], []
     metadatas = []                       # per-question extras (rich YAML datasets)
-    perf = {name: [] for name in PERF_FIELDS}  # per-question latency/resource values
+    perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
     for item in items:
         question = item.query
         print(f"Q: {question}")
@@ -175,8 +175,8 @@ def run_benchmark(
             out = PipelineOutput("", [], [])
 
         metadatas.append(item.metadata)
-        for name in PERF_FIELDS:
-            perf[name].append(getattr(out, name))
+        for perf_field in PERF_FIELDS:
+            perf[perf_field].append(getattr(out, perf_field))
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
             m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
@@ -216,10 +216,10 @@ def run_benchmark(
         meta_cols |= set(tag)
     # Latency/resource columns: emit one per field that has any value. Latencies
     # are always present; resource fields only when the resource flag was on.
-    for name in PERF_FIELDS:
-        values = perf[name]
+    for perf_field in PERF_FIELDS:
+        values = perf[perf_field]
         if any(v is not None for v in values):
-            out_df[name] = values
+            out_df[perf_field] = values
     if track_hits:
         # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
         for metric_name in retr_rows[0]:
