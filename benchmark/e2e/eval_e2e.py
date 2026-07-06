@@ -106,7 +106,7 @@ JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_mode
 # MEASURE_RESOURCES=1 or run.measure_resources in config.yaml.
 _measure_env = os.environ.get("MEASURE_RESOURCES")
 MEASURE_RESOURCES = (
-    _measure_env not in ("", "0", "false", "False", "no")
+    _measure_env.strip().lower() not in ("", "0", "false", "no", "off")
     if _measure_env is not None
     else BENCH.measure_resources
 )
