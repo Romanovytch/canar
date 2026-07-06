@@ -59,6 +59,29 @@ answer the project's central question: *which retrieval strategy works best for
 which kind of question?* If the product later adopts a YAML profile format, the
 schema is intentionally the same, so a profile can be shared.
 
+## Resource benchmark (optional)
+
+Set `run.measure_resources: true` (or env `MEASURE_RESOURCES=1`) to also measure
+the **resource cost** of each retrieval strategy, not just answer quality. It's
+**off by default** and adds a tiny sampler thread per phase only when on.
+
+Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
+
+| Column | Meaning |
+|---|---|
+| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of that phase |
+| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak process memory in that phase |
+| `gpu_util_pct` / `gpu_mem_mb` | GPU utilization / memory — **device-level** |
+
+When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
+runs stay comparable across computers.
+
+Needs `psutil` (in the `benchmark` extra). GPU columns need `nvidia-ml-py`
+(`pip install -e ".[benchmark-gpu]"`); without it they stay empty. **Caveat:**
+generation/embedding run in a separate server process, so GPU numbers are the
+whole device's usage during the phase, not this process's — the clean
+per-strategy signals are time, CPU and memory.
+
 ## Notes
 
 - `judge_model`: the local reasoning model (`qwen3.5`) is slow and times out as

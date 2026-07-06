@@ -12,7 +12,7 @@ across benchmarks lives here:
 What changes between benchmarks stays in the thin caller script:
 
     - `pipeline(question) -> PipelineOutput`   (how an answer is produced)
-    - `DatasetSpec`                            (which CSV, which columns)
+    - `DatasetSpec`                            (which dataset file; CSV or YAML)
     - the metrics list and the judge LLM/embeddings
 
 To build a NEW benchmark, write a short script that defines a `pipeline`
@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 import retrieval_metrics
+from dataset_loaders import load_dataset
 from ragas import EvaluationDataset, evaluate
 from ragas.dataset_schema import SingleTurnSample
 from ragas.run_config import RunConfig
@@ -42,17 +43,45 @@ class PipelineOutput:
     paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
     retrieval_latency_s: float | None = None         # time spent retrieving
     generation_latency_s: float | None = None        # time spent generating the answer
+    # Optional resource cost (only set when the resource flag is on; see
+    # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
+    retrieval_cpu_s: float | None = None
+    retrieval_peak_rss_mb: float | None = None
+    generation_cpu_s: float | None = None
+    generation_peak_rss_mb: float | None = None
+    gpu_util_pct: float | None = None
+    gpu_mem_mb: float | None = None
+
+
+# Per-question performance measurements carried on PipelineOutput. Each becomes a
+# column only when at least one question reports a value, so a run without the
+# resource flag adds no columns (latencies are always present, so they always do).
+PERF_FIELDS = (
+    "retrieval_latency_s",
+    "generation_latency_s",
+    "retrieval_cpu_s",
+    "retrieval_peak_rss_mb",
+    "generation_cpu_s",
+    "generation_peak_rss_mb",
+    "gpu_util_pct",
+    "gpu_mem_mb",
+)
 
 
 @dataclass
 class DatasetSpec:
-    """Where the questions live and which columns to read."""
+    """Where the dataset lives, plus a couple of run-level knobs.
+
+    The file format (CSV / YAML) is detected from the extension, or forced with
+    `fmt`. Field mapping lives in the format loaders (harness/dataset_loaders/),
+    so this no longer carries column names.
+    """
     path: Path
-    question_col: str = "query"
-    reference_col: str = "grading_notes"
-    # column holding the expected source file; None disables the retrieval metrics
+    fmt: str | None = None              # override format detection, e.g. "yaml"
+    # None disables the retrieval metrics; also the label of the source column
+    # written to the output.
     source_col: str | None = "source_fiche"
-    limit: int | None = None            # None = all rows; int = quick subset
+    limit: int | None = None            # None = all questions; int = quick subset
 
 
 def _write_answers_md(path, df, title, tag, score_cols, source_col) -> None:
@@ -127,15 +156,17 @@ def run_benchmark(
                   so several runs can be concatenated and compared.
     file_label  : prefix for the output CSV name (e.g. the profile name).
     """
-    df = pd.read_csv(dataset.path)
+    items = load_dataset(dataset.path, fmt=dataset.fmt)
     if dataset.limit:
-        df = df.head(dataset.limit)
+        items = items[:dataset.limit]
     track_hits = dataset.source_col is not None
-    print(f"{name}: {len(df)} questions\n")
+    print(f"{name}: {len(items)} questions\n")
 
-    samples, retr_rows, all_paths, latencies, gen_latencies = [], [], [], [], []
-    for _, row in df.iterrows():
-        question = row[dataset.question_col]
+    samples, retr_rows, all_paths = [], [], []
+    metadatas = []                       # per-question extras (rich YAML datasets)
+    perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
+    for item in items:
+        question = item.query
         print(f"Q: {question}")
         try:
             out = pipeline(question)
@@ -143,11 +174,12 @@ def run_benchmark(
             print(f"   [pipeline failed: {e}]")
             out = PipelineOutput("", [], [])
 
-        latencies.append(out.retrieval_latency_s)
-        gen_latencies.append(out.generation_latency_s)
+        metadatas.append(item.metadata)
+        for perf_field in PERF_FIELDS:
+            perf[perf_field].append(getattr(out, perf_field))
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
-            m = retrieval_metrics.compute(out.paths, row[dataset.source_col], k=retrieval_k)
+            m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
             retr_rows.append(m)
             all_paths.append("; ".join(out.paths))
             print(f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
@@ -159,7 +191,7 @@ def run_benchmark(
             user_input=question,
             retrieved_contexts=out.contexts,
             response=out.answer,
-            reference=row[dataset.reference_col],
+            reference=item.reference,
         ))
 
     if track_hits and retr_rows:
@@ -182,18 +214,35 @@ def run_benchmark(
         for key, value in tag.items():
             out_df[key] = value
         meta_cols |= set(tag)
-    # latencies are always available (deterministic, no source column needed)
-    if any(latency is not None for latency in latencies):
-        out_df["retrieval_latency_s"] = latencies
-    if any(latency is not None for latency in gen_latencies):
-        out_df["generation_latency_s"] = gen_latencies
+    # Latency/resource columns: emit one per field that has any value. Latencies
+    # are always present; resource fields only when the resource flag was on.
+    for perf_field in PERF_FIELDS:
+        values = perf[perf_field]
+        if any(v is not None for v in values):
+            out_df[perf_field] = values
     if track_hits:
         # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
         for metric_name in retr_rows[0]:
             out_df[metric_name] = [r[metric_name] for r in retr_rows]
         out_df["retrieved_paths"] = all_paths
-        out_df[dataset.source_col] = df[dataset.source_col].values
+        out_df[dataset.source_col] = [item.source_fiche for item in items]
         meta_cols |= {"retrieved_paths", dataset.source_col}
+
+    # Surface per-question metadata from richer (YAML) datasets as columns, so the
+    # extra signal — question_type, difficulty, answer_present, id, ... — reaches
+    # the reporting layer and runs can be sliced by it. Only scalar values become
+    # columns (lists like expected_terms don't fit a CSV cell); they stay on
+    # DatasetItem.metadata for deeper use. CSV datasets carry no metadata, so this
+    # is a no-op for them and metrics.csv is unchanged.
+    scalar = (str, int, float, bool, type(None))
+    meta_keys: list[str] = []
+    for md in metadatas:
+        for key, value in md.items():
+            if key not in meta_keys and isinstance(value, scalar):
+                meta_keys.append(key)
+    for key in meta_keys:
+        out_df[key] = [md.get(key) for md in metadatas]
+    meta_cols |= set(meta_keys)
 
     score_cols = [c for c in out_df.columns if c not in meta_cols]
     print(out_df[["user_input"] + score_cols].to_string(index=False))
@@ -214,8 +263,9 @@ def run_benchmark(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     tag_cols = list(tag) if tag else []
+    extra_cols = [k for k in meta_keys if k not in tag_cols]  # dataset metadata
     metrics_path = out_dir / "metrics.csv"
-    out_df[["user_input"] + tag_cols + score_cols].to_csv(metrics_path, index=False)
+    out_df[["user_input"] + tag_cols + extra_cols + score_cols].to_csv(metrics_path, index=False)
 
     answers_path = out_dir / "answers.md"
     _write_answers_md(answers_path, out_df, name, tag, score_cols, dataset.source_col)

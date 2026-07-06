@@ -11,3 +11,5 @@ __pycache__/
 
 # Local notes (not for the repo)
 SPARSE_TODO.md
+ISSUE_25_NOTES.md
+PERF_BENCHMARK_PLAN.md

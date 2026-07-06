@@ -69,8 +69,10 @@ load_dotenv(REPO_ROOT / ".env", override=True)
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
 from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
+from resource_probe import hardware_profile, probe  # noqa: E402
 
-from canar.app.agents import r_helpdesk  # noqa: E402
+
+from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
@@ -87,7 +89,7 @@ cfg.validate()
 BENCH = load_config(BENCH_DIR / "config.yaml")
 
 DATASET = DatasetSpec(
-    path=BENCH_DIR / BENCH.dataset,   # columns: query, grading_notes, source_fiche
+    path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
     limit=BENCH.limit,                # null in YAML = all questions
 )
 
@@ -99,6 +101,16 @@ GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", BENCH.gen_max_tokens))
 # RAGAS judge — may differ from the product LLM. A non-reasoning model
 # (qwen2.5:7b) avoids the timeouts of the reasoning 9B. Priority: env > YAML > product.
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_model
+
+# Optional resource benchmark (CPU/memory/GPU per phase). Off by default; when on
+# it adds a tiny sampler thread per phase. Priority: env > YAML. Turn on with
+# MEASURE_RESOURCES=1 or run.measure_resources in config.yaml.
+_measure_env = os.environ.get("MEASURE_RESOURCES")
+MEASURE_RESOURCES = (
+    _measure_env.strip().lower() not in ("", "0", "false", "no", "off")
+    if _measure_env is not None
+    else BENCH.measure_resources
+)
 
 
 def _git_commit() -> str:
@@ -120,10 +132,14 @@ PROVENANCE = {
     "judge_model": JUDGE_MODEL,
     "git_commit": _git_commit(),
 }
+# When measuring resources, also stamp the machine (CPU / RAM / GPU) so the
+# numbers can be compared fairly across computers.
+if MEASURE_RESOURCES:
+    PROVENANCE.update(hardware_profile())
 
 # CanaR clients (product code).
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
-chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
+chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model,{"reasoning_effort": cfg.llm_thinking})
 
 # Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
 # FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
@@ -144,6 +160,7 @@ judge_llm = ChatOpenAI(
     openai_api_base=cfg.llm_base,
     openai_api_key=cfg.llm_key or "EMPTY",
     temperature=0.0,
+    reasoning_effort=cfg.llm_thinking,   #
     extra_body={"keep_alive": "10m"},   # avoid Ollama unloading the model between judge calls
 )
 judge_embeddings = OpenAIEmbeddings(
@@ -255,8 +272,8 @@ def build_searcher(spec):
         sys.exit(f"Strategy {spec.strategy!r} not available in RetrievalService "
                  f"(have: {list(service.strategies)}).")
 
-    needs_dense = spec.strategy in {"simple_vector", "hybrid"}
-    needs_sparse = spec.strategy in {"simple_sparse", "hybrid"}
+    needs_dense = spec.strategy in {"simple_vector", "hybrid", "parent_child_hybrid"}
+    needs_sparse = spec.strategy in {"simple_sparse", "hybrid", "parent_child_hybrid"}
     if needs_sparse and sparse_embed is None:
         sys.exit(f"Profile uses {spec.strategy!r} but FASTEMBED_SPARSE_MODEL is unset "
                  "in canar/.env — no sparse encoder available.")
@@ -275,26 +292,39 @@ def build_searcher(spec):
 def make_pipeline(search):
     """Wrap one profile's retrieval into a benchmark pipeline = one product turn."""
     def ask_canar(question: str) -> PipelineOutput:
-        # retrieve (timed for the Latency metric)
-        t0 = time.perf_counter()
-        citations = search(question)              # list[RetrievalHit]
-        retrieval_latency_s = time.perf_counter() - t0
+        # retrieve (timed for the Latency metric; resource-probed when enabled)
+        with probe(MEASURE_RESOURCES) as r_usage:
+            t0 = time.perf_counter()
+            citations = search(question)              # list[RetrievalHit]
+            retrieval_latency_s = time.perf_counter() - t0
 
         # build the exact prompt the app sends (CoachR system prompt + [S1].. context)
-        messages, _src_list = r_helpdesk.build_messages(question, citations)
+        messages, _src_list = generic_agent.build_messages(question, citations)
 
         # generate with CanaR's ChatClient (the app streams; we join the stream).
         # max_tokens generous so the reasoning model finishes thinking AND answers.
         # Timed separately from retrieval, useful e.g. to compare LLM models.
-        t1 = time.perf_counter()
-        answer = "".join(
-            chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
-        )
-        generation_latency_s = time.perf_counter() - t1
+        with probe(MEASURE_RESOURCES) as g_usage:
+            t1 = time.perf_counter()
+            answer = "".join(
+                chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
+            )
+            generation_latency_s = time.perf_counter() - t1
         # The reasoning model can spend its whole budget "thinking" and return an
         # empty answer. Flag it so a 0 score is read as "no answer", not "bad answer".
         if not answer.strip():
             answer = "[EMPTY_ANSWER]"
+
+        # GPU is device-level; report the peak seen across the two phases as the
+        # turn's figure (None when not measured / no GPU).
+        gpu_util = max(
+            [v for v in (r_usage.gpu_util_pct, g_usage.gpu_util_pct) if v is not None],
+            default=None,
+        )
+        gpu_mem = max(
+            [v for v in (r_usage.gpu_mem_mb, g_usage.gpu_mem_mb) if v is not None],
+            default=None,
+        )
 
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.
@@ -304,6 +334,12 @@ def make_pipeline(search):
             paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
             retrieval_latency_s=retrieval_latency_s,
             generation_latency_s=generation_latency_s,
+            retrieval_cpu_s=r_usage.cpu_s,
+            retrieval_peak_rss_mb=r_usage.peak_rss_mb,
+            generation_cpu_s=g_usage.cpu_s,
+            generation_peak_rss_mb=g_usage.peak_rss_mb,
+            gpu_util_pct=gpu_util,
+            gpu_mem_mb=gpu_mem,
         )
 
     return ask_canar
@@ -344,6 +380,9 @@ def main() -> None:
     if summaries:
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
                 "retrieval_latency_s", "generation_latency_s",
+                "retrieval_cpu_s", "retrieval_peak_rss_mb",
+                "generation_cpu_s", "generation_peak_rss_mb",
+                "gpu_util_pct", "gpu_mem_mb",
                 "faithfulness", "answer_relevancy"]
         rows = [
             {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
