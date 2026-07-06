@@ -64,13 +64,13 @@ class _Sampler(threading.Thread):
         super().__init__(daemon=True)
         self._proc = proc
         self._gpu = gpu_handle
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self.peak_rss = 0
         self.gpu_util_samples: list[float] = []
         self.peak_gpu_mem = 0
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 self.peak_rss = max(self.peak_rss, self._proc.memory_info().rss)
             except Exception:
@@ -85,10 +85,10 @@ class _Sampler(threading.Thread):
                     )
                 except Exception:
                     pass
-            self._stop.wait(_SAMPLE_INTERVAL_S)
+            self._stop_event.wait(_SAMPLE_INTERVAL_S)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=1.0)
 
 
