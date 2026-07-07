@@ -21,6 +21,8 @@ class ChatbotConfig(SQLModel, table=True):
     #max_context_tokens cohérent avec le slider
     max_context_tokens: int = Field(default=2048, ge=256)
 
+    allowed_tools: list[str] = Field(default=[])
+
     @property
     def exporte_mime_type(self) -> str:
         """"""
