@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from canar.app.retrieval.models import (
     DenseRetrievalParams,
+    FusionRetrievalParams,
     ParentChildRetrievalParams,
     RerankRetrievalParams,
     RetrievalHit,
@@ -36,12 +37,6 @@ class FakeConfig:
     qdrant_dense_vector_name = "text-dense"
     qdrant_sparse_vector_name = "text-sparse"
     fastembed_sparse_model = ""
-    rerank_enabled = False
-    reranker_name = "bge"
-    rerank_model_name = ""
-    rerank_top_n = 5
-    rerank_device = "cuda"
-    rerank_max_length = 8192
     qdrant_url = "http://qdrant.test"
     qdrant_api_key = ""
 
@@ -54,12 +49,12 @@ class FakeReranker:
         self,
         query: str,
         candidates: list[RetrievalHit],
-        top_n: int | None = None,
+        top_k: int | None = None,
     ) -> list[RetrievalHit]:
-        self.calls.append((query, candidates, top_n))
+        self.calls.append((query, candidates, top_k))
         reranked = list(reversed(candidates))
-        if top_n is not None:
-            return reranked[:top_n]
+        if top_k is not None:
+            return reranked[:top_k]
         return reranked
 
 
@@ -218,10 +213,9 @@ def test_retrieval_service_embeds_dense_and_sparse_for_hybrid_profile():
                 name="hybrid",
                 strategy="hybrid",
                 collections=("docs",),
-                dense_top_k=30,
-                sparse_top_k=30,
-                fusion="rrf",
-                final_top_k=10,
+                dense=DenseRetrievalParams(fetch_top_k=30, min_score=0.35),
+                sparse=SparseRetrievalParams(fetch_top_k=30),
+                fusion=FusionRetrievalParams(method="rrf", output_top_k=10),
             )
         },
         agent_profiles={"r_helpdesk": "hybrid"},
@@ -266,22 +260,20 @@ def test_retrieval_service_builds_hybrid_with_dense_and_sparse_vector_names(
     assert service.strategies["simple_vector"].profile.vector_name == "text-dense"
     assert hybrid.dense_strategy.profile.vector_name == "text-dense"
     assert hybrid.sparse_strategy.profile.vector_name == "text-sparse"
-    assert hybrid.dense_strategy.profile.top_k == 10
-    assert hybrid.sparse_strategy.profile.top_k == 10
     assert hybrid.dense_strategy.profile.dense == DenseRetrievalParams(
-        top_k=10,
+        fetch_top_k=10,
         min_score=0.35,
         max_kept=None,
     )
     assert hybrid.sparse_strategy.profile.sparse == SparseRetrievalParams(
-        top_k=10,
+        fetch_top_k=10,
         min_score_ratio=0.35,
         gap_ratio=None,
         max_kept=None,
     )
 
 
-def test_retrieval_service_from_config_builds_profile_reranker_when_config_disabled(
+def test_retrieval_service_from_config_builds_profile_enabled_reranker(
     monkeypatch,
 ):
     class FakeQdrantAdapter:
@@ -310,24 +302,20 @@ def test_retrieval_service_from_config_builds_profile_reranker_when_config_disab
         FakeConfig(),
         embed_client=FakeEmbedClient(),
         sparse_embed_client=FakeSparseEmbedClient(),
+        agent_profiles={"r_helpdesk": "hybrid_rerank"},
     )
 
-    assert service.rerank_enabled is False
     assert service.reranker is not None
-    assert built == [("bge", "cuda", 8192, None)]
+    assert built == [("bge", "auto", 8192, None)]
 
 
-def test_retrieval_service_from_config_builds_enabled_reranker_with_model_override(
+def test_retrieval_service_from_config_builds_profile_reranker_with_model_override(
     monkeypatch,
 ):
     class FakeQdrantAdapter:
         def __init__(self, url: str, api_key: str | None = None):
             self.url = url
             self.api_key = api_key
-
-    class RerankConfig(FakeConfig):
-        rerank_enabled = True
-        rerank_model_name = "custom/bge-reranker"
 
     import canar.app.retrieval.service as service_module
 
@@ -344,18 +332,49 @@ def test_retrieval_service_from_config_builds_enabled_reranker_with_model_overri
         built.append((name, device, max_length, model_name))
         return fake_reranker
 
+    def fake_build_profiles(
+        collections: tuple[str, ...],
+        dense_vector_name: str | None = None,
+        sparse_vector_name: str | None = None,
+    ) -> dict[str, RetrievalProfile]:
+        return {
+            "simple_vector": RetrievalProfile(
+                name="simple_vector",
+                strategy="simple_vector",
+                collections=collections,
+                vector_name=dense_vector_name,
+            ),
+            "simple_sparse": RetrievalProfile(
+                name="simple_sparse",
+                strategy="simple_sparse",
+                collections=collections,
+                vector_name=sparse_vector_name,
+            ),
+            "hybrid_rerank": RetrievalProfile(
+                name="hybrid_rerank",
+                strategy="hybrid",
+                collections=collections,
+                rerank=RerankRetrievalParams(
+                    reranker_name="qwen",
+                    device="cpu",
+                    max_length=512,
+                ),
+            ),
+        }
+
     monkeypatch.setattr(service_module, "QdrantRetrievalAdapter", FakeQdrantAdapter)
     monkeypatch.setattr(service_module, "build_reranker", fake_build_reranker)
+    monkeypatch.setattr(service_module, "build_retrieval_profiles", fake_build_profiles)
 
     service = RetrievalService.from_config(
-        RerankConfig(),
+        FakeConfig(),
         embed_client=FakeEmbedClient(),
         sparse_embed_client=FakeSparseEmbedClient(),
+        agent_profiles={"r_helpdesk": "hybrid_rerank"},
     )
 
-    assert service.rerank_enabled is True
     assert service.reranker is fake_reranker
-    assert built == [("bge", "cuda", 8192, "custom/bge-reranker")]
+    assert built == [("qwen", "cpu", 512, None)]
 
 
 def test_retrieval_service_reranks_hybrid_hits_when_enabled():
@@ -377,21 +396,18 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
         embed_client=dense_embed,
         sparse_embed_client=sparse_embed,
         profiles={
-            "hybrid": RetrievalProfile(
-                name="hybrid",
+            "hybrid_rerank": RetrievalProfile(
+                name="hybrid_rerank",
                 strategy="hybrid",
                 collections=("docs",),
                 rerank=RerankRetrievalParams(
-                    candidate_top_k=20,
-                    rerank_top_n=1,
-                    reranker_model=None,
+                    output_top_k=1,
                 ),
             )
         },
-        agent_profiles={"r_helpdesk": "hybrid"},
+        agent_profiles={"r_helpdesk": "hybrid_rerank"},
         strategies={"hybrid": strategy},
         reranker=reranker,
-        rerank_enabled=False,
     )
 
     hits = service.search("r_helpdesk", "comment filtrer ?")
@@ -400,10 +416,9 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
     assert strategy_queries == [
         RetrievalQuery(
             text="comment filtrer ?",
-            profile_name="hybrid",
+            profile_name="hybrid_rerank",
             dense_vector=[1.0, 2.0],
             sparse_vector=SparseVector(indices=[3], values=[0.7]),
-            candidate_top_k=20,
         )
     ]
     assert reranker.calls == [
@@ -418,7 +433,7 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
     ]
 
 
-def test_retrieval_service_keeps_hybrid_only_when_rerank_is_disabled():
+def test_retrieval_service_keeps_hybrid_only_when_profile_has_no_rerank_block():
     dense_embed = FakeEmbedClient()
     sparse_embed = FakeSparseEmbedClient()
     strategy = FakeStrategy()
@@ -436,16 +451,23 @@ def test_retrieval_service_keeps_hybrid_only_when_rerank_is_disabled():
         agent_profiles={"r_helpdesk": "hybrid"},
         strategies={"hybrid": strategy},
         reranker=reranker,
-        rerank_enabled=False,
     )
 
     hits = service.search("r_helpdesk", "comment filtrer ?")
 
     assert [hit.text for hit in hits] == ["answer context"]
+    assert strategy.queries == [
+        RetrievalQuery(
+            text="comment filtrer ?",
+            profile_name="hybrid",
+            dense_vector=[1.0, 2.0],
+            sparse_vector=SparseVector(indices=[3], values=[0.7]),
+        )
+    ]
     assert reranker.calls == []
 
 
-def test_retrieval_service_per_call_rerank_false_overrides_enabled_default():
+def test_retrieval_service_without_profile_rerank_params_keeps_hybrid_only():
     dense_embed = FakeEmbedClient()
     sparse_embed = FakeSparseEmbedClient()
     strategy = FakeStrategy()
@@ -458,47 +480,25 @@ def test_retrieval_service_per_call_rerank_false_overrides_enabled_default():
                 name="hybrid",
                 strategy="hybrid",
                 collections=("docs",),
-                rerank=RerankRetrievalParams(),
             )
         },
         agent_profiles={"r_helpdesk": "hybrid"},
         strategies={"hybrid": strategy},
         reranker=reranker,
-        rerank_enabled=True,
     )
 
-    hits = service.search("r_helpdesk", "comment filtrer ?", rerank=False)
+    hits = service.search("r_helpdesk", "comment filtrer ?")
 
     assert [hit.text for hit in hits] == ["answer context"]
+    assert strategy.queries == [
+        RetrievalQuery(
+            text="comment filtrer ?",
+            profile_name="hybrid",
+            dense_vector=[1.0, 2.0],
+            sparse_vector=SparseVector(indices=[3], values=[0.7]),
+        )
+    ]
     assert reranker.calls == []
-
-
-def test_retrieval_service_per_call_rerank_true_overrides_disabled_default():
-    dense_embed = FakeEmbedClient()
-    sparse_embed = FakeSparseEmbedClient()
-    strategy = FakeStrategy()
-    reranker = FakeReranker()
-    service = RetrievalService(
-        embed_client=dense_embed,
-        sparse_embed_client=sparse_embed,
-        profiles={
-            "hybrid": RetrievalProfile(
-                name="hybrid",
-                strategy="hybrid",
-                collections=("docs",),
-                rerank=RerankRetrievalParams(),
-            )
-        },
-        agent_profiles={"r_helpdesk": "hybrid"},
-        strategies={"hybrid": strategy},
-        reranker=reranker,
-        rerank_enabled=False,
-    )
-
-    hits = service.search("r_helpdesk", "comment filtrer ?", rerank=True)
-
-    assert [hit.text for hit in hits] == ["answer context"]
-    assert len(reranker.calls) == 1
 
 
 def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
@@ -523,14 +523,23 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
     sparse_parent_child = service.profiles["simple_sparse_parent_child"]
     hybrid_parent_child = service.profiles["hybrid_parent_child"]
 
-    assert set(service.strategies) == {"simple_vector", "simple_sparse", "hybrid"}
+    assert set(service.strategies) == {
+        "simple_vector",
+        "simple_vector_parent_child",
+        "simple_sparse",
+        "simple_sparse_parent_child",
+        "hybrid",
+        "hybrid_rerank",
+        "hybrid_parent_child",
+        "hybrid_parent_child_rerank",
+    }
     assert "parent_child" in service.hit_expanders
     assert vector_parent_child.strategy == "simple_vector"
     assert vector_parent_child.parent_child == ParentChildRetrievalParams(
         parent_collection_suffix="_parent",
     )
     assert vector_parent_child.dense == DenseRetrievalParams(
-        top_k=5,
+        fetch_top_k=5,
         min_score=0.35,
         max_kept=None,
     )
@@ -539,7 +548,7 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         parent_collection_suffix="_parent",
     )
     assert sparse_parent_child.sparse == SparseRetrievalParams(
-        top_k=5,
+        fetch_top_k=5,
         min_score_ratio=0.35,
         gap_ratio=None,
         max_kept=None,
@@ -549,12 +558,12 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         parent_collection_suffix="_parent",
     )
     assert hybrid_parent_child.dense == DenseRetrievalParams(
-        top_k=10,
+        fetch_top_k=10,
         min_score=0.35,
         max_kept=None,
     )
     assert hybrid_parent_child.sparse == SparseRetrievalParams(
-        top_k=10,
+        fetch_top_k=10,
         min_score_ratio=0.35,
         gap_ratio=None,
         max_kept=None,

@@ -12,14 +12,14 @@ class SparseVector:
 
 @dataclass(frozen=True)
 class DenseRetrievalParams:
-    top_k: int = 5
+    fetch_top_k: int = 5
     min_score: float | None = None
     max_kept: int | None = None
 
 
 @dataclass(frozen=True)
 class SparseRetrievalParams:
-    top_k: int = 5
+    fetch_top_k: int = 5
     min_score_ratio: float | None = None
     gap_ratio: float | None = None
     max_kept: int | None = None
@@ -35,7 +35,7 @@ class FusionRetrievalParams:
             "sparse": 1.0,
         }
     )
-    final_top_k: int = 5
+    output_top_k: int = 5
 
 
 @dataclass(frozen=True)
@@ -45,9 +45,11 @@ class ParentChildRetrievalParams:
 
 @dataclass(frozen=True)
 class RerankRetrievalParams:
-    candidate_top_k: int = 20
-    rerank_top_n: int = 5
-    reranker_model: str | None = None
+    output_top_k: int = 5
+    # Profiles choose the reranker family; exact model overrides stay below this layer.
+    reranker_name: str = "bge"
+    device: str | None = "auto"
+    max_length: int = 8192
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,6 @@ class RetrievalProfile:
     name: str
     strategy: str
     collections: tuple[str, ...]
-    top_k: int = 5
     score_threshold: float = 0.35
     source_filter: str | None = "utilitr"
     fallback_top_k: int = 3
@@ -64,10 +65,6 @@ class RetrievalProfile:
     sparse: SparseRetrievalParams | None = None
     fusion: FusionRetrievalParams | str | None = None
     rerank: RerankRetrievalParams | None = None
-    dense_top_k: int | None = None
-    sparse_top_k: int | None = None
-    final_top_k: int | None = None
-    rerank_candidate_top_k: int | None = None
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 1.0
@@ -78,16 +75,14 @@ class RetrievalProfile:
         if self.dense is not None:
             return self.dense
         return DenseRetrievalParams(
-            top_k=self.dense_top_k or self.top_k,
+            fetch_top_k=5,
             min_score=self.score_threshold,
         )
 
     def sparse_params(self) -> SparseRetrievalParams:
         if self.sparse is not None:
             return self.sparse
-        return SparseRetrievalParams(
-            top_k=self.sparse_top_k or self.top_k,
-        )
+        return SparseRetrievalParams(fetch_top_k=5)
 
     def fusion_params(self) -> FusionRetrievalParams:
         if isinstance(self.fusion, FusionRetrievalParams):
@@ -99,7 +94,7 @@ class RetrievalProfile:
                 "dense": self.dense_weight,
                 "sparse": self.sparse_weight,
             },
-            final_top_k=self.final_top_k or self.top_k,
+            output_top_k=5,
         )
 
     def parent_child_params(self) -> ParentChildRetrievalParams:
@@ -112,11 +107,7 @@ class RetrievalProfile:
     def rerank_params(self) -> RerankRetrievalParams | None:
         if self.rerank is not None:
             return self.rerank
-        if self.rerank_candidate_top_k is None:
-            return None
-        return RerankRetrievalParams(
-            candidate_top_k=self.rerank_candidate_top_k,
-        )
+        return None
 
 
 @dataclass(frozen=True)
@@ -125,7 +116,6 @@ class RetrievalQuery:
     profile_name: str
     dense_vector: list[float] | None = None
     sparse_vector: SparseVector | None = None
-    candidate_top_k: int | None = None
 
 
 @dataclass(frozen=True)

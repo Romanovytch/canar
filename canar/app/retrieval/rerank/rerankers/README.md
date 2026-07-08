@@ -17,7 +17,7 @@ Both classes expose the same public API:
 from canar.app.retrieval.rerank.rerankers import BGEReranker
 
 reranker = BGEReranker()
-results = reranker.rerank(query=query, candidates=hits, top_n=10)
+results = reranker.rerank(query=query, candidates=hits, top_k=10)
 ```
 
 The returned candidates preserve the original retrieval fields and score. Each
@@ -27,32 +27,28 @@ result also receives a new `rerank_score` field used for ordering.
 ## App Integration
 
 Reranking is wired through `RetrievalService.search(...)` after hybrid fusion.
-Use these environment variables to enable it for the app:
-
-```text
-RERANK=true
-RERANKER=bge        # bge or qwen; bge is the default
-RERANK_MODEL_NAME=   # optional explicit Hugging Face model override
-RERANK_TOP_N=5       # output count, not the retrieval candidate-pool size
-RERANK_DEVICE=cuda  # cuda by default; set to cpu only for local smoke checks
-RERANK_MAX_LENGTH=8192
-```
-
-Callers can still override the app default per request:
+It is controlled by the selected retrieval profile, not by `.env`. Configure it
+in `profiles.py` with `RerankRetrievalParams`:
 
 ```python
-retrieval.search("r_helpdesk", question, rerank=False)  # hybrid only
-retrieval.search("r_helpdesk", question, rerank=True)   # hybrid + reranker
+rerank=RerankRetrievalParams(
+    output_top_k=5,
+    reranker_name="bge",
+    device="auto",
+    max_length=8192,
+)
 ```
 
-The reranker wrapper is built only when `RERANK=true`. Model weights are still
-lazy-loaded only on the first reranked query, so startup does not download or load
-the Hugging Face model.
+Device modes are `auto` for CUDA when available otherwise CPU, `cuda` to force
+GPU, `cpu` to force CPU, and `None` to leave PyTorch's default placement alone.
 
-`RERANK_TOP_N` only controls how many reranked hits are returned. The number of
-hybrid candidates sent into the reranker is controlled by the selected retrieval
-profile, for example `rerank_candidate_top_k=20` in `profiles.py`. Keep
-`RERANK_TOP_N <= rerank_candidate_top_k` for coherent results.
+The reranker wrapper is built only when a profile has enabled rerank params. Model
+weights are still lazy-loaded only on the first reranked query, so startup does
+not download or load the Hugging Face model.
+
+`rerank.output_top_k` controls how many reranked hits are returned. The number of
+hybrid candidates sent into the reranker is the selected rerank profile's
+`fusion.output_top_k`.
 
 ## Deployment Notes
 

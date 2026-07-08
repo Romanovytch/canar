@@ -6,6 +6,15 @@ from dataclasses import FrozenInstanceError, asdict, is_dataclass
 from typing import Any
 
 
+def resolve_reranker_device(torch_module: Any, device: str | None) -> str | None:
+    """Resolve profile device settings without importing torch at app startup."""
+    if device is None:
+        return None
+    if device.strip().lower() == "auto":
+        return "cuda" if torch_module.cuda.is_available() else "cpu"
+    return device
+
+
 class RerankerCandidateMixin:
     """Shared candidate handling for reranker implementations."""
 

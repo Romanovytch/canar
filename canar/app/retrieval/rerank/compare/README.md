@@ -25,14 +25,14 @@ python canar/app/retrieval/rerank/compare/compare.py "comment filtrer un datafra
 Useful overrides:
 
 ```bash
-python canar/app/retrieval/rerank/compare/compare.py "ma question" --top-n 10 --device cuda
+python canar/app/retrieval/rerank/compare/compare.py "ma question" --top-k 10 --device cuda
 python canar/app/retrieval/rerank/compare/compare.py "ma question" --collection utilitr_bgem3_ds
 python canar/app/retrieval/rerank/compare/compare.py "ma question" --qdrant-url http://localhost:6360
 ```
 
-`--top-n` only changes how many reranked results are printed/returned. It does
+`--top-k` only changes how many reranked results are printed/returned. It does
 not increase the hybrid candidate pool sent to the reranker; that pool is set by
-the retrieval profile's `rerank_candidate_top_k` value.
+the selected rerank profile's `fusion.output_top_k` value.
 
 ## How to Read the Output
 

@@ -4,6 +4,20 @@ import pytest
 
 from canar.app.retrieval.models import RetrievalHit
 from canar.app.retrieval.rerank.rerankers import BGEReranker, QwenReranker, build_reranker
+from canar.app.retrieval.rerank.rerankers._candidate_utils import resolve_reranker_device
+
+
+class FakeCuda:
+    def __init__(self, available: bool):
+        self.available = available
+
+    def is_available(self) -> bool:
+        return self.available
+
+
+class FakeTorch:
+    def __init__(self, cuda_available: bool):
+        self.cuda = FakeCuda(cuda_available)
 
 
 class FakeBGEReranker(BGEReranker):
@@ -36,7 +50,7 @@ def test_bge_reranker_orders_hits_and_adds_rerank_score_without_model_load():
     ]
     reranker = FakeBGEReranker([0.1, 0.9, 0.4])
 
-    reranked = reranker.rerank("query", hits, top_n=2)
+    reranked = reranker.rerank("query", hits, top_k=2)
 
     assert [hit.text for hit in reranked] == ["second", "third"]
     assert [hit.rerank_score for hit in reranked] == [0.9, 0.4]
@@ -65,14 +79,14 @@ def test_qwen_reranker_formats_instruction_and_keeps_tie_order():
     ]
 
 
-def test_reranker_rejects_blank_query_negative_top_n_and_missing_text():
+def test_reranker_rejects_blank_query_negative_top_k_and_missing_text():
     reranker = FakeBGEReranker([1.0])
     hit = RetrievalHit(text="answer", collection="docs", score=1.0, score_norm=1.0)
 
     with pytest.raises(ValueError, match="query must be a non-empty string"):
         reranker.rerank("  ", [hit])
-    with pytest.raises(ValueError, match="top_n must be greater than or equal to 0"):
-        reranker.rerank("query", [hit], top_n=-1)
+    with pytest.raises(ValueError, match="top_k must be greater than or equal to 0"):
+        reranker.rerank("query", [hit], top_k=-1)
     with pytest.raises(ValueError, match="candidate must contain a text/content field"):
         reranker.rerank("query", [{"metadata": {"source": "docs"}}])
 
@@ -93,3 +107,11 @@ def test_build_reranker_defaults_to_gpu_ready_bge_and_rejects_unknown_name():
     assert custom_bge.device == "cpu"
     with pytest.raises(ValueError, match="Unsupported reranker"):
         build_reranker("cross-encoder")
+
+
+def test_resolve_reranker_device_supports_auto_force_and_default_modes():
+    assert resolve_reranker_device(FakeTorch(cuda_available=True), "auto") == "cuda"
+    assert resolve_reranker_device(FakeTorch(cuda_available=False), "auto") == "cpu"
+    assert resolve_reranker_device(FakeTorch(cuda_available=True), "cuda") == "cuda"
+    assert resolve_reranker_device(FakeTorch(cuda_available=True), "cpu") == "cpu"
+    assert resolve_reranker_device(FakeTorch(cuda_available=True), None) is None

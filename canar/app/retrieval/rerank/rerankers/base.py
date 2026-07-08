@@ -11,6 +11,6 @@ class Reranker(Protocol):
         self,
         query: str,
         candidates: Sequence[RetrievalHit],
-        top_n: int | None = None,
+        top_k: int | None = None,
     ) -> list[RetrievalHit]:
         """Return candidates ordered by descending reranker score."""

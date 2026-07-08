@@ -154,17 +154,19 @@ QDRANT_MULTI_VECTOR_NAME=multi
 ```
 
 
-Use BGE first:
-For the compare script, these rerank variables are optional. They are mainly needed when running the normal app
+Use BGE first. Rerank is configured in the retrieval profile, not in `.env`:
 
-```env
-RERANK=true
-RERANKER=bge
-RERANK_MODEL_NAME=
-RERANK_DEVICE=cuda
-RERANK_TOP_N=5
-RERANK_MAX_LENGTH=8192
+```python
+rerank=RerankRetrievalParams(
+    output_top_k=5,
+    reranker_name="bge",
+    device="auto",
+    max_length=8192,
+)
 ```
+
+Device modes are `auto` for CUDA when available otherwise CPU, `cuda` to force
+GPU, `cpu` to force CPU, and `None` to leave PyTorch's default placement alone.
 
 Do not switch to Qwen until BGE works end to end.
 
@@ -263,13 +265,12 @@ Change the number of reranked results returned:
 ```bash
 python canar/app/retrieval/rerank/compare/compare.py \
   "comment filtrer un dataframe en R ?" \
-  --top-n 10
+  --top-k 10
 ```
 
 This only changes the returned/printed reranker output count. It does not
-increase the hybrid candidate pool; that is controlled by
-`rerank_candidate_top_k` in the retrieval profile. Keep `RERANK_TOP_N` less than
-or equal to that candidate-pool size.
+increase the hybrid candidate pool; that is controlled by `fusion.output_top_k`
+on the selected rerank profile.
 
 Override the collection:
 

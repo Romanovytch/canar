@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from canar.app.retrieval.rerank.rerankers._candidate_utils import RerankerCandidateMixin
+from canar.app.retrieval.rerank.rerankers._candidate_utils import (
+    RerankerCandidateMixin,
+    resolve_reranker_device,
+)
 
 
 class BGEReranker(RerankerCandidateMixin):
@@ -21,7 +24,7 @@ class BGEReranker(RerankerCandidateMixin):
         # lower max_length = faster, less memory, but more truncation risk
         max_length: int = 8192,
         device: str | None = None,
-        # cuda for gpu, cpu for cpu, or None to let torch decide
+        # auto uses CUDA when available; cuda/cpu force placement; None leaves defaults.
     ) -> None:
         # Store model settings without loading model weights during construction.
         self.model_name = model_name
@@ -38,7 +41,7 @@ class BGEReranker(RerankerCandidateMixin):
         self,
         query: str,
         candidates: Sequence[Any],
-        top_n: int | None = None,
+        top_k: int | None = None,
     ) -> list[Any]:
         """Return candidates sorted by BGE rerank score, highest first."""
         # Reject blank queries because pairwise scoring is meaningless without one.
@@ -46,11 +49,11 @@ class BGEReranker(RerankerCandidateMixin):
             raise ValueError("query must be a non-empty string")
 
         # Reject negative limits early so callers get a clear configuration error.
-        if top_n is not None and top_n < 0:
-            raise ValueError("top_n must be greater than or equal to 0")
+        if top_k is not None and top_k < 0:
+            raise ValueError("top_k must be greater than or equal to 0")
 
         # Empty retrieval output remains empty after reranking.
-        if not candidates or top_n == 0:
+        if not candidates or top_k == 0:
             return []
 
         # Build one cross-encoder pair per candidate while preserving input order.
@@ -74,10 +77,10 @@ class BGEReranker(RerankerCandidateMixin):
         )
         reranked = [candidate for _, candidate in ordered]
 
-        # Return all candidates unless the caller requested a smaller top_n.
-        if top_n is None:
+        # Return all candidates unless the caller requested a smaller top_k.
+        if top_k is None:
             return reranked
-        return reranked[:top_n]
+        return reranked[:top_k]
 
     def _ensure_model(self) -> None:
         # Avoid importing heavy ML libraries until reranking is actually used.
@@ -99,9 +102,10 @@ class BGEReranker(RerankerCandidateMixin):
         # Load the sequence-classification head used by the BGE reranker model card.
         model = AutoModelForSequenceClassification.from_pretrained(self.model_name).eval()
 
-        # Move the model only when the caller explicitly selected a device.
-        if self.device is not None:
-            model = model.to(self.device)
+        # Resolve auto lazily so importing the app does not require torch.
+        resolved_device = resolve_reranker_device(torch, self.device)
+        if resolved_device is not None:
+            model = model.to(resolved_device)
 
         # Store everything needed for subsequent rerank calls.
         self._torch = torch

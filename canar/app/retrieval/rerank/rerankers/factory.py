@@ -10,6 +10,7 @@ def build_reranker(
     *,
     device: str | None = None,
     max_length: int = 8192,
+    # Internal escape hatch for custom weights; profiles normally use reranker_name.
     model_name: str | None = None,
 ) -> Reranker:
     normalized_name = name.strip().lower()

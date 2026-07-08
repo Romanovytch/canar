@@ -6,16 +6,66 @@ from textwrap import shorten
 
 from canar.app.api.embed_client import EmbedClient
 from canar.app.config import AppConfig
-from canar.app.retrieval.models import RetrievalHit
+from canar.app.retrieval.models import RetrievalHit, RetrievalProfile
+from canar.app.retrieval.profiles import build_retrieval_profiles
 from canar.app.retrieval.service import RetrievalService
 
 DEFAULT_COLLECTION = "utilitr_bgem3_ds"
 DEFAULT_QDRANT_URL = "http://localhost:6360"
 
 
-def build_service(cfg: AppConfig) -> RetrievalService:
+def build_profiles(
+    cfg: AppConfig,
+    *,
+    reranker_name: str = "bge",
+    top_k: int | None = None,
+    device: str | None = None,
+) -> dict[str, RetrievalProfile]:
+    profiles = build_retrieval_profiles(
+        tuple(cfg.qdrant_collections),
+        dense_vector_name=cfg.qdrant_dense_vector_name or None,
+        sparse_vector_name=cfg.qdrant_sparse_vector_name or None,
+    )
+    for profile_name in ("hybrid_rerank", "hybrid_parent_child_rerank"):
+        profile = profiles[profile_name]
+        params = profile.rerank_params()
+        if params is None:
+            continue
+        profiles[profile_name] = replace(
+            profile,
+            rerank=replace(
+                params,
+                reranker_name=reranker_name,
+                output_top_k=top_k if top_k is not None else params.output_top_k,
+                device=device if device is not None else params.device,
+            ),
+        )
+    return profiles
+
+
+def build_service(
+    cfg: AppConfig,
+    *,
+    agent: str,
+    use_rerank: bool,
+    reranker_name: str = "bge",
+    top_k: int | None = None,
+    device: str | None = None,
+) -> RetrievalService:
     embed_client = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
-    return RetrievalService.from_config(cfg, embed_client=embed_client)
+    profiles = build_profiles(
+        cfg,
+        reranker_name=reranker_name,
+        top_k=top_k,
+        device=device,
+    )
+    profile_name = "hybrid_rerank" if use_rerank else "hybrid"
+    return RetrievalService.from_config(
+        cfg,
+        embed_client=embed_client,
+        profiles=profiles,
+        agent_profiles={agent: profile_name},
+    )
 
 
 def print_hits(title: str, hits: list[RetrievalHit], max_chars: int) -> None:
@@ -69,12 +119,12 @@ def parse_args() -> argparse.Namespace:
         help="Qdrant URL.",
     )
     parser.add_argument(
-        "--top-n",
+        "--top-k",
         type=int,
         default=None,
-        help="Override RERANK_TOP_N output count; does not increase candidate pool.",
+        help="Override the reranker output count; fusion.output_top_k controls candidates.",
     )
-    parser.add_argument("--device", default=None, help="Override RERANK_DEVICE.")
+    parser.add_argument("--device", default=None, help="Override the profile rerank device.")
     parser.add_argument("--max-chars", type=int, default=280, help="Max text chars per hit.")
     parser.add_argument(
         "--include-qwen",
@@ -92,10 +142,6 @@ def main() -> None:
         qdrant_url=args.qdrant_url,
         qdrant_collections=(args.collection,),
     )
-    if args.top_n is not None:
-        cfg = replace(cfg, rerank_top_n=args.top_n)
-    if args.device is not None:
-        cfg = replace(cfg, rerank_device=args.device)
     cfg.validate()
 
     print(f"query={args.query!r}")
@@ -103,20 +149,34 @@ def main() -> None:
     print(f"qdrant_url={cfg.qdrant_url}")
     print(f"collection={args.collection}")
     print(f"sparse_model={cfg.fastembed_sparse_model}")
-    print(f"rerank_device={cfg.rerank_device}")
-    print(f"rerank_top_n={cfg.rerank_top_n}")
+    print(f"rerank_device={args.device or 'profile default'}")
+    print(f"output_top_k={args.top_k or 'profile default'}")
 
-    hybrid_service = build_service(replace(cfg, reranker_name="bge", rerank_enabled=False))
-    hybrid_hits = hybrid_service.search(args.agent, args.query, rerank=False)
+    hybrid_service = build_service(cfg, agent=args.agent, use_rerank=False)
+    hybrid_hits = hybrid_service.search(args.agent, args.query)
     print_hits("HYBRID", hybrid_hits, args.max_chars)
 
-    bge_service = build_service(replace(cfg, reranker_name="bge", rerank_enabled=True))
-    bge_hits = bge_service.search(args.agent, args.query, rerank=True)
+    bge_service = build_service(
+        cfg,
+        agent=args.agent,
+        use_rerank=True,
+        reranker_name="bge",
+        top_k=args.top_k,
+        device=args.device,
+    )
+    bge_hits = bge_service.search(args.agent, args.query)
     print_hits("HYBRID + BGE RERANK", bge_hits, args.max_chars)
 
     if args.include_qwen:
-        qwen_service = build_service(replace(cfg, reranker_name="qwen", rerank_enabled=True))
-        qwen_hits = qwen_service.search(args.agent, args.query, rerank=True)
+        qwen_service = build_service(
+            cfg,
+            agent=args.agent,
+            use_rerank=True,
+            reranker_name="qwen",
+            top_k=args.top_k,
+            device=args.device,
+        )
+        qwen_hits = qwen_service.search(args.agent, args.query)
         print_hits("HYBRID + QWEN RERANK", qwen_hits, args.max_chars)
 
 

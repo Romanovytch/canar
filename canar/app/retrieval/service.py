@@ -25,8 +25,6 @@ class RetrievalService:
         hit_expanders: dict[str, HitExpander] | None = None,
         sparse_embed_client: FastEmbedClient | None = None,
         reranker: Reranker | None = None,
-        rerank_enabled: bool = False,
-        rerank_top_n: int | None = None,
     ):
         self.embed_client = embed_client
         self.sparse_embed_client = sparse_embed_client
@@ -35,8 +33,6 @@ class RetrievalService:
         self.strategies = strategies
         self.hit_expanders = hit_expanders or {}
         self.reranker = reranker
-        self.rerank_enabled = rerank_enabled
-        self.rerank_top_n = rerank_top_n
 
     @classmethod
     def from_config(
@@ -44,81 +40,83 @@ class RetrievalService:
         cfg: AppConfig,
         embed_client: EmbedClient,
         sparse_embed_client: FastEmbedClient | None = None,
+        profiles: dict[str, RetrievalProfile] | None = None,
+        agent_profiles: dict[str, str | None] | None = None,
     ) -> RetrievalService:
-        profiles = build_retrieval_profiles(
-            tuple(cfg.qdrant_collections),
-            dense_vector_name=cfg.qdrant_dense_vector_name,
-            sparse_vector_name=cfg.qdrant_sparse_vector_name,
-        )
+        if profiles is None:
+            profiles = build_retrieval_profiles(
+                tuple(cfg.qdrant_collections),
+                dense_vector_name=cfg.qdrant_dense_vector_name,
+                sparse_vector_name=cfg.qdrant_sparse_vector_name,
+            )
+        if agent_profiles is None:
+            agent_profiles = AGENT_RETRIEVAL_PROFILES
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
 
         profile_rerank_params = None
-        for profile in profiles.values():
-            profile_rerank_params = profile.rerank_params()
-            if profile_rerank_params is not None:
+        active_profile_names = {name for name in agent_profiles.values() if name is not None}
+        for profile_name in active_profile_names:
+            profile = profiles.get(profile_name)
+            if profile is None:
+                continue
+            params = profile.rerank_params()
+            if params is not None:
+                profile_rerank_params = params
                 break
         reranker = None
-        if cfg.rerank_enabled or profile_rerank_params is not None:
+        if profile_rerank_params is not None:
             reranker = build_reranker(
-                cfg.reranker_name,
-                device=cfg.rerank_device,
-                max_length=cfg.rerank_max_length,
-                model_name=(
-                    cfg.rerank_model_name
-                    or (profile_rerank_params.reranker_model if profile_rerank_params else None)
-                    or None
-                ),
+                profile_rerank_params.reranker_name,
+                device=profile_rerank_params.device,
+                max_length=profile_rerank_params.max_length,
             )
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
-        hybrid_profile = profiles["hybrid"]
-        hybrid_dense_params = hybrid_profile.dense_params()
-        hybrid_sparse_params = hybrid_profile.sparse_params()
-        hybrid_dense_profile = replace(
-            hybrid_profile,
-            name="hybrid_dense",
-            strategy="simple_vector",
-            top_k=hybrid_dense_params.top_k,
-            dense=hybrid_dense_params,
-            vector_name=cfg.qdrant_dense_vector_name or None,
-        )
-        hybrid_sparse_profile = replace(
-            hybrid_profile,
-            name="hybrid_sparse",
-            strategy="simple_sparse",
-            top_k=hybrid_sparse_params.top_k,
-            sparse=hybrid_sparse_params,
-        )
-        simple_vector_strategy = SimpleVectorStrategy(profiles["simple_vector"], qdrant)
-        simple_sparse_strategy = SimpleSparseStrategy(profiles["simple_sparse"], qdrant)
-        hybrid_strategy = HybridStrategy(
-            hybrid_profile,
-            SimpleVectorStrategy(hybrid_dense_profile, qdrant),
-            SimpleSparseStrategy(hybrid_sparse_profile, qdrant),
-        )
-        strategies: dict[str, RetrievalStrategy] = {
-            "simple_vector": simple_vector_strategy,
-            "simple_sparse": simple_sparse_strategy,
-            "hybrid": hybrid_strategy,
-        }
+
+        def build_hybrid_strategy(profile: RetrievalProfile) -> HybridStrategy:
+            hybrid_dense_profile = replace(
+                profile,
+                name=f"{profile.name}:dense",
+                strategy="simple_vector",
+                dense=profile.dense_params(),
+                vector_name=cfg.qdrant_dense_vector_name or None,
+            )
+            hybrid_sparse_profile = replace(
+                profile,
+                name=f"{profile.name}:sparse",
+                strategy="simple_sparse",
+                sparse=profile.sparse_params(),
+            )
+            return HybridStrategy(
+                profile,
+                SimpleVectorStrategy(hybrid_dense_profile, qdrant),
+                SimpleSparseStrategy(hybrid_sparse_profile, qdrant),
+            )
+
+        strategies: dict[str, RetrievalStrategy] = {}
+        for profile in profiles.values():
+            if profile.strategy == "simple_vector":
+                strategies[profile.name] = SimpleVectorStrategy(profile, qdrant)
+            elif profile.strategy == "simple_sparse":
+                strategies[profile.name] = SimpleSparseStrategy(profile, qdrant)
+            elif profile.strategy == "hybrid":
+                strategies[profile.name] = build_hybrid_strategy(profile)
+
         return cls(
             embed_client=embed_client,
             profiles=profiles,
-            agent_profiles=AGENT_RETRIEVAL_PROFILES,
+            agent_profiles=agent_profiles,
             strategies=strategies,
             hit_expanders={"parent_child": ParentChildExpander(qdrant)},
             sparse_embed_client=sparse_embed_client,
             reranker=reranker,
-            rerank_enabled=cfg.rerank_enabled,
-            rerank_top_n=cfg.rerank_top_n,
         )
 
     def search(
         self,
         agent: str,
         query: str,
-        rerank: bool | None = None,
     ) -> list[RetrievalHit]:
         profile_name = self.agent_profiles.get(agent)
         if profile_name is None:
@@ -128,7 +126,7 @@ class RetrievalService:
         if profile is None:
             raise ValueError(f"Unknown retrieval profile for agent {agent!r}: {profile_name!r}")
 
-        strategy = self.strategies.get(profile.strategy)
+        strategy = self.strategies.get(profile.name) or self.strategies.get(profile.strategy)
         if strategy is None:
             raise ValueError(f"Unsupported retrieval strategy: {profile.strategy!r}")
 
@@ -145,34 +143,22 @@ class RetrievalService:
             sparse_vector = self.sparse_embed_client.embed_query(query)
 
         rerank_params = profile.rerank_params()
-        if rerank is None:
-            should_rerank = rerank_params is not None or self.rerank_enabled
-        else:
-            should_rerank = rerank
-        supports_rerank = self._supports_rerank(profile)
-        candidate_top_k = (
-            rerank_params.candidate_top_k
-            if should_rerank and supports_rerank and rerank_params is not None
-            else None
-        )
+        should_rerank = rerank_params is not None
         retrieval_query = RetrievalQuery(
             text=query,
             profile_name=profile.name,
             dense_vector=dense_vector,
             sparse_vector=sparse_vector,
-            candidate_top_k=candidate_top_k,
         )
         hits = strategy.search(retrieval_query)
         hits = self._expand_hits(profile, hits)
-        if should_rerank and supports_rerank:
+        if should_rerank:
             if self.reranker is None:
-                raise ValueError("rerank=True but no reranker is configured")
+                raise ValueError("Rerank is enabled but no reranker is configured")
             return self.reranker.rerank(
                 query=query,
                 candidates=hits,
-                top_n=(
-                    rerank_params.rerank_top_n if rerank_params is not None else self.rerank_top_n
-                ),
+                top_k=rerank_params.output_top_k,
             )
         return hits
 
@@ -189,5 +175,3 @@ class RetrievalService:
             raise ValueError("Unsupported retrieval hit expansion: 'parent_child'")
         return expander.expand(hits, profile.parent_child_params())
 
-    def _supports_rerank(self, profile: RetrievalProfile) -> bool:
-        return profile.rerank_params() is not None

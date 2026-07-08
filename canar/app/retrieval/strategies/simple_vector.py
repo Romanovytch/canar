@@ -21,7 +21,7 @@ class SimpleVectorStrategy:
             hits = self.adapter.search_dense(
                 collection=collection,
                 query_vector=query.dense_vector,
-                top_k=params.top_k,
+                top_k=params.fetch_top_k,
                 source_filter=self.profile.source_filter,
                 vector_name=self.profile.vector_name,
             )

@@ -21,7 +21,7 @@ class SimpleSparseStrategy:
             hits = self.adapter.search_sparse(
                 collection=collection,
                 query_vector=query.sparse_vector,
-                top_k=params.top_k,
+                top_k=params.fetch_top_k,
                 source_filter=self.profile.source_filter,
                 vector_name=self.profile.vector_name,
             )
@@ -49,6 +49,9 @@ class SimpleSparseStrategy:
         if params.min_score_ratio is not None and pruned:
             min_score = pruned[0].score_norm * params.min_score_ratio
             pruned = [hit for hit in pruned if hit.score_norm >= min_score]
+        elif params.gap_ratio is None and params.max_kept is None:
+            pruned = [hit for hit in pruned if hit.score_norm >= self.profile.score_threshold]
+
         if params.gap_ratio is not None:
             pruned = self._keep_until_score_gap(pruned, params.gap_ratio)
         if not pruned:
