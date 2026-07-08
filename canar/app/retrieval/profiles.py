@@ -30,6 +30,24 @@ def build_retrieval_profiles(
             fallback_top_k=3,
             vector_name=dense_vector_name or None,
         ),
+        "simple_vector_parent_child": RetrievalProfile(
+            name="simple_vector_parent_child",
+            strategy="simple_vector",
+            collections=collections,
+            top_k=5,
+            score_threshold=0.35,
+            source_filter="utilitr",
+            fallback_top_k=3,
+            vector_name=dense_vector_name or None,
+            dense=DenseRetrievalParams(
+                top_k=5,
+                min_score=0.35,
+                max_kept=None,
+            ),
+            parent_child=ParentChildRetrievalParams(
+                parent_collection_suffix="_parent",
+            ),
+        ),
         "simple_sparse": RetrievalProfile(
             name="simple_sparse",
             strategy="simple_sparse",
@@ -40,18 +58,19 @@ def build_retrieval_profiles(
             fallback_top_k=3,
             vector_name=sparse_vector_name or None,
         ),
-        "parent_child_vector": RetrievalProfile(
-            name="parent_child_vector",
-            strategy="parent_child_vector",
+        "simple_sparse_parent_child": RetrievalProfile(
+            name="simple_sparse_parent_child",
+            strategy="simple_sparse",
             collections=collections,
             top_k=5,
             score_threshold=0.35,
             source_filter=None,
             fallback_top_k=3,
-            vector_name=dense_vector_name or None,
-            dense=DenseRetrievalParams(
+            vector_name=sparse_vector_name or None,
+            sparse=SparseRetrievalParams(
                 top_k=5,
-                min_score=0.35,
+                min_score_ratio=0.35,
+                gap_ratio=None,
                 max_kept=None,
             ),
             parent_child=ParentChildRetrievalParams(
@@ -85,9 +104,9 @@ def build_retrieval_profiles(
                 final_top_k=5,
             ),
         ),
-        "parent_child_hybrid": RetrievalProfile(
-            name="parent_child_hybrid",
-            strategy="parent_child_hybrid",
+        "hybrid_parent_child": RetrievalProfile(
+            name="hybrid_parent_child",
+            strategy="hybrid",
             collections=collections,
             top_k=5,
             score_threshold=0.35,

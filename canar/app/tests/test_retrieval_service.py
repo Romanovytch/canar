@@ -55,6 +55,30 @@ class FakeStrategy:
         ]
 
 
+class FakeExpander:
+    def __init__(self):
+        self.hits: list[list[RetrievalHit]] = []
+        self.params: list[ParentChildRetrievalParams] = []
+
+    def expand(
+        self,
+        hits: list[RetrievalHit],
+        params: ParentChildRetrievalParams,
+    ) -> list[RetrievalHit]:
+        self.hits.append(hits)
+        self.params.append(params)
+        return [
+            RetrievalHit(
+                text=hit.text,
+                generation_text="expanded context",
+                collection=hit.collection,
+                score=hit.score,
+                score_norm=hit.score_norm,
+            )
+            for hit in hits
+        ]
+
+
 def test_retrieval_service_selects_profile_by_agent_and_embeds_query():
     embed = FakeEmbedClient()
     strategy = FakeStrategy()
@@ -82,6 +106,35 @@ def test_retrieval_service_selects_profile_by_agent_and_embeds_query():
             dense_vector=[1.0, 2.0],
         )
     ]
+
+
+def test_retrieval_service_expands_hits_when_profile_enables_expansion():
+    embed = FakeEmbedClient()
+    strategy = FakeStrategy()
+    expander = FakeExpander()
+    service = RetrievalService(
+        embed_client=embed,
+        profiles={
+            "simple_vector_parent_child": RetrievalProfile(
+                name="simple_vector_parent_child",
+                strategy="simple_vector",
+                collections=("docs",),
+                parent_child=ParentChildRetrievalParams(
+                    parent_collection_suffix="_parents",
+                ),
+            )
+        },
+        agent_profiles={"r_helpdesk": "simple_vector_parent_child"},
+        strategies={"simple_vector": strategy},
+        hit_expanders={"parent_child": expander},
+    )
+
+    hits = service.search("r_helpdesk", "Comment filtrer un dataframe ?")
+
+    assert [hit.generation_text for hit in hits] == ["expanded context"]
+    assert len(expander.hits) == 1
+    assert [hit.text for hit in expander.hits[0]] == ["answer context"]
+    assert expander.params == [ParentChildRetrievalParams(parent_collection_suffix="_parents")]
 
 
 def test_retrieval_service_returns_no_hits_for_agent_without_profile():
@@ -222,27 +275,41 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         sparse_embed_client=FakeSparseEmbedClient(),
     )
 
-    parent_child_vector = service.strategies["parent_child_vector"]
-    parent_child_hybrid = service.strategies["parent_child_hybrid"]
-    parent_child_hybrid_child = parent_child_hybrid.child_strategy
+    vector_parent_child = service.profiles["simple_vector_parent_child"]
+    sparse_parent_child = service.profiles["simple_sparse_parent_child"]
+    hybrid_parent_child = service.profiles["hybrid_parent_child"]
 
-    assert parent_child_vector.profile.parent_child == ParentChildRetrievalParams(
+    assert set(service.strategies) == {"simple_vector", "simple_sparse", "hybrid"}
+    assert "parent_child" in service.hit_expanders
+    assert vector_parent_child.strategy == "simple_vector"
+    assert vector_parent_child.parent_child == ParentChildRetrievalParams(
         parent_collection_suffix="_parent",
     )
-    assert parent_child_vector.child_strategy.profile.dense == DenseRetrievalParams(
+    assert vector_parent_child.dense == DenseRetrievalParams(
         top_k=5,
         min_score=0.35,
         max_kept=None,
     )
-    assert parent_child_hybrid.profile.parent_child == ParentChildRetrievalParams(
+    assert sparse_parent_child.strategy == "simple_sparse"
+    assert sparse_parent_child.parent_child == ParentChildRetrievalParams(
         parent_collection_suffix="_parent",
     )
-    assert parent_child_hybrid_child.dense_strategy.profile.dense == DenseRetrievalParams(
+    assert sparse_parent_child.sparse == SparseRetrievalParams(
+        top_k=5,
+        min_score_ratio=0.35,
+        gap_ratio=None,
+        max_kept=None,
+    )
+    assert hybrid_parent_child.strategy == "hybrid"
+    assert hybrid_parent_child.parent_child == ParentChildRetrievalParams(
+        parent_collection_suffix="_parent",
+    )
+    assert hybrid_parent_child.dense == DenseRetrievalParams(
         top_k=10,
         min_score=0.35,
         max_kept=None,
     )
-    assert parent_child_hybrid_child.sparse_strategy.profile.sparse == SparseRetrievalParams(
+    assert hybrid_parent_child.sparse == SparseRetrievalParams(
         top_k=10,
         min_score_ratio=0.35,
         gap_ratio=None,
