@@ -4,6 +4,7 @@ from canar.app.retrieval.models import (
     DenseRetrievalParams,
     FusionRetrievalParams,
     ParentChildRetrievalParams,
+    RerankRetrievalParams,
     RetrievalProfile,
     SparseRetrievalParams,
 )
@@ -103,6 +104,11 @@ def build_retrieval_profiles(
                 weights={"dense": 1.0, "sparse": 1.0},
                 final_top_k=5,
             ),
+            rerank=RerankRetrievalParams(
+                candidate_top_k=20,
+                rerank_top_n=5,
+                reranker_model=None,
+            ),
         ),
         "hybrid_parent_child": RetrievalProfile(
             name="hybrid_parent_child",
@@ -132,6 +138,11 @@ def build_retrieval_profiles(
             ),
             parent_child=ParentChildRetrievalParams(
                 parent_collection_suffix="_parent",
+            ),
+            rerank=RerankRetrievalParams(
+                candidate_top_k=20,
+                rerank_top_n=5,
+                reranker_model=None,
             ),
         ),
     }

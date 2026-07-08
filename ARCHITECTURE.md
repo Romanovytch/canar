@@ -137,6 +137,11 @@ RetrievalProfile(
         weights={"dense": 1.0, "sparse": 1.0},
         final_top_k=5,
     ),
+    rerank=RerankRetrievalParams(
+        candidate_top_k=20,
+        rerank_top_n=5,
+        reranker_model=None,
+    ),
 )
 ```
 
@@ -207,6 +212,10 @@ The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weig
 
 The legacy flat hybrid fields (`dense_top_k`, `sparse_top_k`, `fusion`, `final_top_k`, `rrf_k`, `dense_weight`, `sparse_weight`) are still accepted and resolved into nested parameter blocks for compatibility.
 
+Reranking is enabled per profile by setting `rerank=RerankRetrievalParams(...)`.
+When enabled, retrieval asks the base strategy for `candidate_top_k` candidates and
+then returns the profile's `rerank_top_n` reranked results.
+
 ## Data model
 
 Retrieval code exchanges typed project-owned objects:
@@ -247,6 +256,13 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class RerankRetrievalParams:
+    candidate_top_k: int = 20
+    rerank_top_n: int = 5
+    reranker_model: str | None = None
+
+
+@dataclass(frozen=True)
 class RetrievalProfile:
     name: str
     strategy: str
@@ -259,9 +275,11 @@ class RetrievalProfile:
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
     fusion: FusionRetrievalParams | str | None = None
+    rerank: RerankRetrievalParams | None = None
     dense_top_k: int | None = None
     sparse_top_k: int | None = None
     final_top_k: int | None = None
+    rerank_candidate_top_k: int | None = None
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 1.0

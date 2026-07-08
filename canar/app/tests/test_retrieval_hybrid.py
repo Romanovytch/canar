@@ -6,6 +6,7 @@ from canar.app.retrieval.fusion.rrf import ReciprocalRankFusion
 from canar.app.retrieval.models import (
     DenseRetrievalParams,
     FusionRetrievalParams,
+    RerankRetrievalParams,
     RetrievalHit,
     RetrievalProfile,
     RetrievalQuery,
@@ -85,6 +86,12 @@ def test_hybrid_profile_is_registered_with_expected_parameters():
         weights={"dense": 1.0, "sparse": 1.0},
         final_top_k=5,
     )
+
+    assert profile.rerank == RerankRetrievalParams(
+        candidate_top_k=20,
+        rerank_top_n=5,
+        reranker_model=None,
+    )
     assert profile.vector_name == "text-sparse"
 
 
@@ -114,6 +121,21 @@ def test_flat_hybrid_profile_fields_are_resolved_for_backward_compatibility():
         rrf_k=12,
         weights={"dense": 1.5, "sparse": 2.0},
         final_top_k=8,
+    )
+
+
+def test_flat_rerank_candidate_field_is_resolved_for_backward_compatibility():
+    profile = RetrievalProfile(
+        name="legacy_hybrid",
+        strategy="hybrid",
+        collections=("docs",),
+        rerank_candidate_top_k=30,
+    )
+
+    assert profile.rerank_params() == RerankRetrievalParams(
+        candidate_top_k=30,
+        rerank_top_n=5,
+        reranker_model=None,
     )
 
 
@@ -180,6 +202,31 @@ def test_rrf_sparse_weight_can_favor_sparse_results():
     )
 
     assert [result.text for result in fused] == ["sparse top", "dense top"]
+
+
+def test_hybrid_strategy_uses_query_candidate_top_k_override():
+    profile = RetrievalProfile(
+        name="hybrid",
+        strategy="hybrid",
+        collections=("docs",),
+        fusion="rrf",
+        final_top_k=5,
+    )
+    dense = FakeStrategy([hit("dense top")])
+    sparse = FakeStrategy([hit("sparse top")])
+    fusion = RecordingFusion()
+    query = RetrievalQuery(
+        text="exact_table_name",
+        profile_name="hybrid",
+        dense_vector=[0.1, 0.2],
+        sparse_vector=SparseVector(indices=[1], values=[1.0]),
+        candidate_top_k=20,
+    )
+
+    HybridStrategy(profile, dense, sparse, fusion_strategies={"rrf": fusion}).search(query)
+
+    _ranked_lists, top_k, _weights = fusion.calls[0]
+    assert top_k == 20
 
 
 def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():

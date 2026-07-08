@@ -44,6 +44,13 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class RerankRetrievalParams:
+    candidate_top_k: int = 20
+    rerank_top_n: int = 5
+    reranker_model: str | None = None
+
+
+@dataclass(frozen=True)
 class RetrievalProfile:
     name: str
     strategy: str
@@ -56,6 +63,7 @@ class RetrievalProfile:
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
     fusion: FusionRetrievalParams | str | None = None
+    rerank: RerankRetrievalParams | None = None
     dense_top_k: int | None = None
     sparse_top_k: int | None = None
     final_top_k: int | None = None
@@ -99,6 +107,15 @@ class RetrievalProfile:
             return self.parent_child
         return ParentChildRetrievalParams(
             parent_collection_suffix=self.parent_collection_suffix,
+        )
+
+    def rerank_params(self) -> RerankRetrievalParams | None:
+        if self.rerank is not None:
+            return self.rerank
+        if self.rerank_candidate_top_k is None:
+            return None
+        return RerankRetrievalParams(
+            candidate_top_k=self.rerank_candidate_top_k,
         )
 
 
