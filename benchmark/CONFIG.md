@@ -67,20 +67,24 @@ the **resource cost** of each retrieval strategy, not just answer quality. It's
 
 Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
 
-| Column | Meaning |
-|---|---|
-| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of that phase |
-| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak process memory in that phase |
-| `gpu_util_pct` / `gpu_mem_mb` | GPU utilization / memory — **device-level** |
+| Column | What it measures | What it does NOT measure |
+|---|---|---|
+| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of the **benchmark process** in that phase | the LLM server's CPU; `generation_cpu_s` is mostly HTTP-wait |
+| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak memory of the **benchmark process** in that phase | the LLM server's memory |
+| `gpu_util_pct` | mean GPU utilization, **whole device** | this process only |
+| `gpu_mem_delta_mb` | GPU memory the turn **added** (peak minus the value at phase start) — the number to compare methods with | memory already resident (loaded models) |
+| `gpu_mem_total_mb` | absolute device memory at peak — context only | anything attributable: it includes the LLM server and other tenants |
 
 When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
 runs stay comparable across computers.
 
-Needs `psutil` (in the `benchmark` extra). GPU columns need `nvidia-ml-py`
-(`pip install -e ".[benchmark-gpu]"`); without it they stay empty. **Caveat:**
-generation/embedding run in a separate server process, so GPU numbers are the
-whole device's usage during the phase, not this process's — the clean
-per-strategy signals are time, CPU and memory.
+Needs `psutil` (in the `benchmark` extra, which also carries `nvidia-ml-py` for
+the GPU columns; without a GPU they stay empty). **Caveat:** generation and
+embedding run in a separate server process (e.g. Ollama) on a shared GPU, so
+GPU numbers are device-level. `gpu_mem_delta_mb` isolates each run's own
+growth; `gpu_mem_total_mb` will look large and stable because the server keeps
+models loaded — that is expected, not a leak. The clean per-strategy signals
+are time, CPU, process memory, and the GPU delta.
 
 ## Notes
 
