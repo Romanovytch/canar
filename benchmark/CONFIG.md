@@ -67,13 +67,20 @@ the **resource cost** of each retrieval strategy, not just answer quality. It's
 
 Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
 
+Only the metrics that actually discriminate methods are surfaced (#53).
+Deliberately not reported: `generation_cpu_s` (mostly HTTP-wait, misleading),
+per-phase RSS (constant process baseline), and the absolute device memory
+(only ever grows on a shared server — the source of the original confusion).
+
 | Column | What it measures | What it does NOT measure |
 |---|---|---|
-| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of the **benchmark process** in that phase | the LLM server's CPU; `generation_cpu_s` is mostly HTTP-wait |
-| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak memory of the **benchmark process** in that phase | the LLM server's memory |
+| `retrieval_latency_s` / `generation_latency_s` | wall-clock time of each phase | — |
+| `retrieval_cpu_s` | CPU seconds of the **benchmark process** during retrieval (real method cost, e.g. BM25) | the LLM server's CPU |
+| `peak_rss_mb` | peak memory of the **benchmark process** in the turn | the LLM server's memory |
 | `gpu_util_pct` | mean GPU utilization, **whole device** | this process only |
 | `gpu_mem_delta_mb` | GPU memory the turn **added** (peak minus the value at phase start) — the number to compare methods with | memory already resident (loaded models) |
-| `gpu_mem_total_mb` | absolute device memory at peak — context only | anything attributable: it includes the LLM server and other tenants |
+| `gpu_mem_procs_mb` | GPU memory held by **compute processes** at peak (NVML per-process) | memory NVML can't attribute (driver/context overhead) |
+| `gpu_procs` | who holds it: `name(pid)=MB` breakdown (e.g. the ollama runner) | — informational, excluded from score means |
 
 When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
 runs stay comparable across computers.
