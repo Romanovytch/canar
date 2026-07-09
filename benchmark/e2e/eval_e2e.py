@@ -71,7 +71,6 @@ from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import hardware_profile, probe  # noqa: E402
 
-
 from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
@@ -316,13 +315,18 @@ def make_pipeline(search):
             answer = "[EMPTY_ANSWER]"
 
         # GPU is device-level; report the peak seen across the two phases as the
-        # turn's figure (None when not measured / no GPU).
+        # turn's figure (None when not measured / no GPU). The delta is the
+        # turn's own memory growth, so it stays comparable across runs (#53).
         gpu_util = max(
             [v for v in (r_usage.gpu_util_pct, g_usage.gpu_util_pct) if v is not None],
             default=None,
         )
-        gpu_mem = max(
-            [v for v in (r_usage.gpu_mem_mb, g_usage.gpu_mem_mb) if v is not None],
+        gpu_mem_delta = max(
+            [v for v in (r_usage.gpu_mem_delta_mb, g_usage.gpu_mem_delta_mb) if v is not None],
+            default=None,
+        )
+        gpu_mem_total = max(
+            [v for v in (r_usage.gpu_mem_total_mb, g_usage.gpu_mem_total_mb) if v is not None],
             default=None,
         )
 
@@ -339,7 +343,8 @@ def make_pipeline(search):
             generation_cpu_s=g_usage.cpu_s,
             generation_peak_rss_mb=g_usage.peak_rss_mb,
             gpu_util_pct=gpu_util,
-            gpu_mem_mb=gpu_mem,
+            gpu_mem_delta_mb=gpu_mem_delta,
+            gpu_mem_total_mb=gpu_mem_total,
         )
 
     return ask_canar
@@ -382,7 +387,7 @@ def main() -> None:
                 "retrieval_latency_s", "generation_latency_s",
                 "retrieval_cpu_s", "retrieval_peak_rss_mb",
                 "generation_cpu_s", "generation_peak_rss_mb",
-                "gpu_util_pct", "gpu_mem_mb",
+                "gpu_util_pct", "gpu_mem_delta_mb", "gpu_mem_total_mb",
                 "faithfulness", "answer_relevancy"]
         rows = [
             {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}

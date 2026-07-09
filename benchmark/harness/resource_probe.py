@@ -39,11 +39,19 @@ _MB = 1024 * 1024
 
 @dataclass
 class ResourceUsage:
-    """Resource cost of one phase. Fields stay None when unmeasured."""
-    cpu_s: float | None = None          # CPU seconds consumed (user + system)
-    peak_rss_mb: float | None = None    # peak resident memory of this process
-    gpu_util_pct: float | None = None   # mean GPU utilization (device-wide)
-    gpu_mem_mb: float | None = None     # peak GPU memory used (device-wide)
+    """Resource cost of one phase. Fields stay None when unmeasured.
+
+    GPU memory is reported two ways so runs stay comparable (issue #53):
+    `gpu_mem_delta_mb` is the growth caused by the phase (peak minus the value
+    at phase start) — the number to compare methods with. `gpu_mem_total_mb`
+    is the absolute device usage at peak, kept for context; on a shared server
+    it includes the LLM server's loaded models and other tenants.
+    """
+    cpu_s: float | None = None            # CPU seconds consumed (user + system)
+    peak_rss_mb: float | None = None      # peak resident memory of this process
+    gpu_util_pct: float | None = None     # mean GPU utilization (device-wide)
+    gpu_mem_delta_mb: float | None = None  # GPU memory the phase added (device-wide)
+    gpu_mem_total_mb: float | None = None  # absolute device memory at peak
 
 
 def _gpu_handle():
@@ -68,6 +76,15 @@ class _Sampler(threading.Thread):
         self.peak_rss = 0
         self.gpu_util_samples: list[float] = []
         self.peak_gpu_mem = 0
+        # Device memory at phase start: the peak is compared against this to get
+        # the phase's own delta, so numbers don't accumulate across runs (#53).
+        self.baseline_gpu_mem = 0
+        if gpu_handle is not None:
+            try:
+                self.baseline_gpu_mem = pynvml.nvmlDeviceGetMemoryInfo(gpu_handle).used
+                self.peak_gpu_mem = self.baseline_gpu_mem
+            except Exception:
+                pass
 
     def run(self) -> None:
         while not self._stop_event.is_set():
@@ -127,7 +144,10 @@ def probe(enabled: bool):
         if sampler.gpu_util_samples:
             usage.gpu_util_pct = sum(sampler.gpu_util_samples) / len(sampler.gpu_util_samples)
         if sampler.peak_gpu_mem:
-            usage.gpu_mem_mb = sampler.peak_gpu_mem / _MB
+            usage.gpu_mem_total_mb = sampler.peak_gpu_mem / _MB
+            usage.gpu_mem_delta_mb = max(
+                0.0, (sampler.peak_gpu_mem - sampler.baseline_gpu_mem) / _MB
+            )
 
 
 def hardware_profile() -> dict:

@@ -108,7 +108,8 @@ RESOURCE_COLS = (
     "generation_cpu_s",
     "generation_peak_rss_mb",
     "gpu_util_pct",
-    "gpu_mem_mb",
+    "gpu_mem_delta_mb",
+    "gpu_mem_total_mb",
 )
 
 
@@ -130,7 +131,8 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
             generation_cpu_s=0.15,
             generation_peak_rss_mb=120.0,
             gpu_util_pct=10.0,
-            gpu_mem_mb=2048.0,
+            gpu_mem_delta_mb=512.0,
+            gpu_mem_total_mb=2048.0,
         )
 
     out_df = run_benchmark(
@@ -147,7 +149,8 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
     for col in RESOURCE_COLS:
         assert col in out_df.columns
     metrics = pd.read_csv(tmp_path / "res" / "metrics.csv")
-    assert metrics["gpu_mem_mb"].iloc[0] == 2048.0
+    assert metrics["gpu_mem_delta_mb"].iloc[0] == 512.0
+    assert metrics["gpu_mem_total_mb"].iloc[0] == 2048.0
 
 
 def test_no_resource_fields_no_columns(stub_ragas, tmp_path):

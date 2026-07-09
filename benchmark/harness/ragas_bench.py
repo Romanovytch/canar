@@ -50,7 +50,10 @@ class PipelineOutput:
     generation_cpu_s: float | None = None
     generation_peak_rss_mb: float | None = None
     gpu_util_pct: float | None = None
-    gpu_mem_mb: float | None = None
+    # GPU memory (device-wide): delta = growth caused by this turn (comparable
+    # across runs); total = absolute device usage at peak, context only (#53).
+    gpu_mem_delta_mb: float | None = None
+    gpu_mem_total_mb: float | None = None
 
 
 # Per-question performance measurements carried on PipelineOutput. Each becomes a
@@ -64,7 +67,8 @@ PERF_FIELDS = (
     "generation_cpu_s",
     "generation_peak_rss_mb",
     "gpu_util_pct",
-    "gpu_mem_mb",
+    "gpu_mem_delta_mb",
+    "gpu_mem_total_mb",
 )
 
 
