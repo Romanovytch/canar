@@ -52,6 +52,11 @@ class ResourceUsage:
     gpu_util_pct: float | None = None     # mean GPU utilization (device-wide)
     gpu_mem_delta_mb: float | None = None  # GPU memory the phase added (device-wide)
     gpu_mem_total_mb: float | None = None  # absolute device memory at peak
+    # Per-process attribution (NVML compute processes), best-effort: total GPU
+    # memory held by compute processes at peak, and a "name(pid)=MB" breakdown
+    # so the operator can see who actually holds it (e.g. the ollama runner).
+    gpu_mem_procs_mb: float | None = None
+    gpu_procs: str | None = None
 
 
 def _gpu_handle():
@@ -76,6 +81,10 @@ class _Sampler(threading.Thread):
         self.peak_rss = 0
         self.gpu_util_samples: list[float] = []
         self.peak_gpu_mem = 0
+        # Per-process attribution at the peak tick: total bytes held by compute
+        # processes and the {pid: bytes} snapshot behind that total.
+        self.peak_proc_mem = 0
+        self.peak_proc_breakdown: dict[int, int] = {}
         # Device memory at phase start: the peak is compared against this to get
         # the phase's own delta, so numbers don't accumulate across runs (#53).
         self.baseline_gpu_mem = 0
@@ -102,11 +111,38 @@ class _Sampler(threading.Thread):
                     )
                 except Exception:
                     pass
+                try:
+                    procs = pynvml.nvmlDeviceGetComputeRunningProcesses(self._gpu)
+                    breakdown = {
+                        p.pid: p.usedGpuMemory
+                        for p in procs
+                        if p.usedGpuMemory is not None
+                    }
+                    total = sum(breakdown.values())
+                    if total > self.peak_proc_mem:
+                        self.peak_proc_mem = total
+                        self.peak_proc_breakdown = breakdown
+                except Exception:
+                    pass
             self._stop_event.wait(_SAMPLE_INTERVAL_S)
 
     def stop(self) -> None:
         self._stop_event.set()
         self.join(timeout=1.0)
+
+
+def _format_proc_breakdown(breakdown: dict[int, int]) -> str:
+    """Render {pid: bytes} as 'name(pid)=MB; ...', resolving names best-effort."""
+    parts = []
+    for pid, mem in sorted(breakdown.items(), key=lambda kv: -kv[1]):
+        name = "?"
+        if psutil is not None:
+            try:
+                name = psutil.Process(pid).name()
+            except Exception:
+                pass
+        parts.append(f"{name}({pid})={round(mem / _MB)}")
+    return "; ".join(parts)
 
 
 @contextmanager
@@ -148,6 +184,9 @@ def probe(enabled: bool):
             usage.gpu_mem_delta_mb = max(
                 0.0, (sampler.peak_gpu_mem - sampler.baseline_gpu_mem) / _MB
             )
+        if sampler.peak_proc_breakdown:
+            usage.gpu_mem_procs_mb = sampler.peak_proc_mem / _MB
+            usage.gpu_procs = _format_proc_breakdown(sampler.peak_proc_breakdown)
 
 
 def hardware_profile() -> dict:

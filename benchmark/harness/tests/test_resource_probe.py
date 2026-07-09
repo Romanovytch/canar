@@ -88,3 +88,30 @@ def test_gpu_delta_is_isolated_from_preexisting_memory(monkeypatch):
     # total reflects the whole device; delta reflects only this phase's growth
     assert usage.gpu_mem_total_mb == 62_000
     assert usage.gpu_mem_delta_mb == 2_000
+
+
+def test_gpu_per_process_attribution_names_the_holder(monkeypatch):
+    if not psutil_available:
+        return
+    mb = 1024 * 1024
+
+    class _Proc:
+        def __init__(self, pid, used):
+            self.pid = pid
+            self.usedGpuMemory = used
+
+    class _FakeNvmlWithProcs(_FakeNvml):
+        def nvmlDeviceGetComputeRunningProcesses(self, handle):
+            return [_Proc(4242, 61_000 * mb), _Proc(4243, None)]  # None = unattributable
+
+    fake = _FakeNvmlWithProcs(start_used=60_000 * mb, grow_to=62_000 * mb)
+    monkeypatch.setattr(resource_probe, "pynvml", fake)
+    monkeypatch.setattr(resource_probe, "_gpu_handle", lambda: object())
+
+    with probe(enabled=True) as usage:
+        _burn_cpu_and_memory()
+
+    assert usage.gpu_mem_procs_mb == 61_000
+    # breakdown names the pid and its MB; the None entry is skipped
+    assert "(4242)=61000" in usage.gpu_procs
+    assert "4243" not in usage.gpu_procs
