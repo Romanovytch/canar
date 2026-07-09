@@ -45,15 +45,14 @@ class PipelineOutput:
     generation_latency_s: float | None = None        # time spent generating the answer
     # Optional resource cost (only set when the resource flag is on; see
     # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
-    retrieval_cpu_s: float | None = None
-    retrieval_peak_rss_mb: float | None = None
-    generation_cpu_s: float | None = None
-    generation_peak_rss_mb: float | None = None
-    gpu_util_pct: float | None = None
-    # GPU memory (device-wide): delta = growth caused by this turn (comparable
-    # across runs); total = absolute device usage at peak, context only (#53).
-    gpu_mem_delta_mb: float | None = None
-    gpu_mem_total_mb: float | None = None
+    # Fundamental resource metrics only (#53). The probe measures more
+    # per-phase detail; the benchmark surfaces what discriminates methods:
+    retrieval_cpu_s: float | None = None   # real in-process CPU of the method
+    peak_rss_mb: float | None = None       # peak benchmark-process memory (turn)
+    gpu_util_pct: float | None = None      # device utilization during the turn
+    gpu_mem_delta_mb: float | None = None  # GPU memory the turn added (comparable)
+    gpu_mem_procs_mb: float | None = None  # held by compute processes at peak
+    gpu_procs: str | None = None           # who holds it: "name(pid)=MB" breakdown
 
 
 # Per-question performance measurements carried on PipelineOutput. Each becomes a
@@ -63,13 +62,15 @@ PERF_FIELDS = (
     "retrieval_latency_s",
     "generation_latency_s",
     "retrieval_cpu_s",
-    "retrieval_peak_rss_mb",
-    "generation_cpu_s",
-    "generation_peak_rss_mb",
+    "peak_rss_mb",
     "gpu_util_pct",
     "gpu_mem_delta_mb",
-    "gpu_mem_total_mb",
+    "gpu_mem_procs_mb",
 )
+
+# Text-valued performance fields: emitted as columns too, but kept out of the
+# score columns (they can't be averaged or formatted as numbers).
+PERF_TEXT_FIELDS = ("gpu_procs",)
 
 
 @dataclass
@@ -168,7 +169,8 @@ def run_benchmark(
 
     samples, retr_rows, all_paths = [], [], []
     metadatas = []                       # per-question extras (rich YAML datasets)
-    perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
+    # per-question latency/resource values (numeric + text)
+    perf = {perf_field: [] for perf_field in PERF_FIELDS + PERF_TEXT_FIELDS}
     for item in items:
         question = item.query
         print(f"Q: {question}")
@@ -179,7 +181,7 @@ def run_benchmark(
             out = PipelineOutput("", [], [])
 
         metadatas.append(item.metadata)
-        for perf_field in PERF_FIELDS:
+        for perf_field in PERF_FIELDS + PERF_TEXT_FIELDS:
             perf[perf_field].append(getattr(out, perf_field))
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
@@ -224,6 +226,13 @@ def run_benchmark(
         values = perf[perf_field]
         if any(v is not None for v in values):
             out_df[perf_field] = values
+    # Text-valued perf fields (e.g. the gpu_procs breakdown) are informational:
+    # emitted as columns but excluded from the score columns and their means.
+    for perf_field in PERF_TEXT_FIELDS:
+        values = perf[perf_field]
+        if any(v is not None for v in values):
+            out_df[perf_field] = values
+            meta_cols.add(perf_field)
     if track_hits:
         # one column per retrieval metric (hit_rate, mrr, recall, precision, ndcg)
         for metric_name in retr_rows[0]:
@@ -268,8 +277,12 @@ def run_benchmark(
 
     tag_cols = list(tag) if tag else []
     extra_cols = [k for k in meta_keys if k not in tag_cols]  # dataset metadata
+    # informational perf text (e.g. gpu_procs): in the CSV, not in score means
+    perf_text_cols = [c for c in PERF_TEXT_FIELDS if c in out_df.columns]
     metrics_path = out_dir / "metrics.csv"
-    out_df[["user_input"] + tag_cols + extra_cols + score_cols].to_csv(metrics_path, index=False)
+    out_df[["user_input"] + tag_cols + extra_cols + score_cols + perf_text_cols].to_csv(
+        metrics_path, index=False
+    )
 
     answers_path = out_dir / "answers.md"
     _write_answers_md(answers_path, out_df, name, tag, score_cols, dataset.source_col)

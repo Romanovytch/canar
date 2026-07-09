@@ -104,12 +104,10 @@ questions:
 
 RESOURCE_COLS = (
     "retrieval_cpu_s",
-    "retrieval_peak_rss_mb",
-    "generation_cpu_s",
-    "generation_peak_rss_mb",
+    "peak_rss_mb",
     "gpu_util_pct",
     "gpu_mem_delta_mb",
-    "gpu_mem_total_mb",
+    "gpu_mem_procs_mb",
 )
 
 
@@ -127,12 +125,11 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
             retrieval_latency_s=0.1,
             generation_latency_s=0.2,
             retrieval_cpu_s=0.05,
-            retrieval_peak_rss_mb=100.0,
-            generation_cpu_s=0.15,
-            generation_peak_rss_mb=120.0,
+            peak_rss_mb=120.0,
             gpu_util_pct=10.0,
             gpu_mem_delta_mb=512.0,
-            gpu_mem_total_mb=2048.0,
+            gpu_mem_procs_mb=1900.0,
+            gpu_procs="ollama(2595)=1900",
         )
 
     out_df = run_benchmark(
@@ -150,7 +147,9 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
         assert col in out_df.columns
     metrics = pd.read_csv(tmp_path / "res" / "metrics.csv")
     assert metrics["gpu_mem_delta_mb"].iloc[0] == 512.0
-    assert metrics["gpu_mem_total_mb"].iloc[0] == 2048.0
+    assert metrics["gpu_mem_procs_mb"].iloc[0] == 1900.0
+    # the text breakdown reaches metrics.csv but stays out of the score means
+    assert metrics["gpu_procs"].iloc[0] == "ollama(2595)=1900"
 
 
 def test_no_resource_fields_no_columns(stub_ragas, tmp_path):

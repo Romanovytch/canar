@@ -325,10 +325,16 @@ def make_pipeline(search):
             [v for v in (r_usage.gpu_mem_delta_mb, g_usage.gpu_mem_delta_mb) if v is not None],
             default=None,
         )
-        gpu_mem_total = max(
-            [v for v in (r_usage.gpu_mem_total_mb, g_usage.gpu_mem_total_mb) if v is not None],
+        peak_rss = max(
+            [v for v in (r_usage.peak_rss_mb, g_usage.peak_rss_mb) if v is not None],
             default=None,
         )
+        # Per-process attribution: keep the phase with the larger footprint
+        # (generation, in practice — that's where the LLM server loads memory).
+        if (g_usage.gpu_mem_procs_mb or 0) >= (r_usage.gpu_mem_procs_mb or 0):
+            proc_usage = g_usage
+        else:
+            proc_usage = r_usage
 
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.
@@ -339,12 +345,11 @@ def make_pipeline(search):
             retrieval_latency_s=retrieval_latency_s,
             generation_latency_s=generation_latency_s,
             retrieval_cpu_s=r_usage.cpu_s,
-            retrieval_peak_rss_mb=r_usage.peak_rss_mb,
-            generation_cpu_s=g_usage.cpu_s,
-            generation_peak_rss_mb=g_usage.peak_rss_mb,
+            peak_rss_mb=peak_rss,
             gpu_util_pct=gpu_util,
             gpu_mem_delta_mb=gpu_mem_delta,
-            gpu_mem_total_mb=gpu_mem_total,
+            gpu_mem_procs_mb=proc_usage.gpu_mem_procs_mb,
+            gpu_procs=proc_usage.gpu_procs,
         )
 
     return ask_canar
@@ -385,9 +390,8 @@ def main() -> None:
     if summaries:
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
                 "retrieval_latency_s", "generation_latency_s",
-                "retrieval_cpu_s", "retrieval_peak_rss_mb",
-                "generation_cpu_s", "generation_peak_rss_mb",
-                "gpu_util_pct", "gpu_mem_delta_mb", "gpu_mem_total_mb",
+                "retrieval_cpu_s", "peak_rss_mb",
+                "gpu_util_pct", "gpu_mem_delta_mb", "gpu_mem_procs_mb",
                 "faithfulness", "answer_relevancy"]
         rows = [
             {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
