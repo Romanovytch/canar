@@ -65,7 +65,7 @@ def test_hybrid_profiles_are_registered_with_expected_parameters():
     profiles = build_retrieval_profiles(("docs",), sparse_vector_name="text-sparse")
 
     profile = profiles["hybrid"]
-    rerank_profile = profiles["hybrid_rerank"]
+    rerank_profile = profiles["hybrid_rerank_bge"]
 
     assert profile.name == "hybrid"
     assert profile.strategy == "hybrid"
@@ -90,7 +90,7 @@ def test_hybrid_profiles_are_registered_with_expected_parameters():
     assert profile.rerank is None
     assert profile.vector_name == "text-sparse"
 
-    assert rerank_profile.name == "hybrid_rerank"
+    assert rerank_profile.name == "hybrid_rerank_bge"
     assert rerank_profile.strategy == "hybrid"
     assert rerank_profile.collections == ("docs",)
     assert rerank_profile.dense == DenseRetrievalParams(
@@ -211,7 +211,7 @@ def test_rrf_sparse_weight_can_favor_sparse_results():
 
 def test_hybrid_strategy_uses_profile_fusion_output_top_k():
     profile = RetrievalProfile(
-        name="hybrid_rerank",
+        name="hybrid_rerank_bge",
         strategy="hybrid",
         collections=("docs",),
         fusion=FusionRetrievalParams(method="rrf", output_top_k=20),
@@ -221,7 +221,7 @@ def test_hybrid_strategy_uses_profile_fusion_output_top_k():
     fusion = RecordingFusion()
     query = RetrievalQuery(
         text="exact_table_name",
-        profile_name="hybrid_rerank",
+        profile_name="hybrid_rerank_bge",
         dense_vector=[0.1, 0.2],
         sparse_vector=SparseVector(indices=[1], values=[1.0]),
     )

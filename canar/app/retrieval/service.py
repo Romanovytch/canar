@@ -25,6 +25,7 @@ class RetrievalService:
         hit_expanders: dict[str, HitExpander] | None = None,
         sparse_embed_client: FastEmbedClient | None = None,
         reranker: Reranker | None = None,
+        rerankers: dict[str, Reranker] | None = None,
     ):
         self.embed_client = embed_client
         self.sparse_embed_client = sparse_embed_client
@@ -32,7 +33,8 @@ class RetrievalService:
         self.agent_profiles = agent_profiles
         self.strategies = strategies
         self.hit_expanders = hit_expanders or {}
-        self.reranker = reranker
+        self.rerankers = rerankers or {}
+        self.reranker = reranker or next(iter(self.rerankers.values()), None)
 
     @classmethod
     def from_config(
@@ -54,23 +56,28 @@ class RetrievalService:
         if sparse_embed_client is None and cfg.fastembed_sparse_model:
             sparse_embed_client = FastEmbedClient(cfg.fastembed_sparse_model)
 
-        profile_rerank_params = None
-        active_profile_names = {name for name in agent_profiles.values() if name is not None}
+        active_profile_names = list(
+            dict.fromkeys(name for name in agent_profiles.values() if name is not None)
+        )
+        rerankers: dict[str, Reranker] = {}
+        reranker_cache: dict[tuple[str, str | None, int], Reranker] = {}
         for profile_name in active_profile_names:
             profile = profiles.get(profile_name)
             if profile is None:
                 continue
             params = profile.rerank_params()
-            if params is not None:
-                profile_rerank_params = params
-                break
-        reranker = None
-        if profile_rerank_params is not None:
-            reranker = build_reranker(
-                profile_rerank_params.reranker_name,
-                device=profile_rerank_params.device,
-                max_length=profile_rerank_params.max_length,
-            )
+            if params is None:
+                continue
+            cache_key = (params.reranker_name, params.device, params.max_length)
+            reranker = reranker_cache.get(cache_key)
+            if reranker is None:
+                reranker = build_reranker(
+                    params.reranker_name,
+                    device=params.device,
+                    max_length=params.max_length,
+                )
+                reranker_cache[cache_key] = reranker
+            rerankers[profile_name] = reranker
 
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
 
@@ -110,7 +117,7 @@ class RetrievalService:
             strategies=strategies,
             hit_expanders={"parent_child": ParentChildExpander(qdrant)},
             sparse_embed_client=sparse_embed_client,
-            reranker=reranker,
+            rerankers=rerankers,
         )
 
     def search(
@@ -153,9 +160,10 @@ class RetrievalService:
         hits = strategy.search(retrieval_query)
         hits = self._expand_hits(profile, hits)
         if should_rerank:
-            if self.reranker is None:
+            reranker = self.rerankers.get(profile.name) or self.reranker
+            if reranker is None:
                 raise ValueError("Rerank is enabled but no reranker is configured")
-            return self.reranker.rerank(
+            return reranker.rerank(
                 query=query,
                 candidates=hits,
                 top_k=rerank_params.output_top_k,

@@ -20,7 +20,7 @@ def test_expanded_profiles_are_registered_without_changing_agent_mapping():
     vector_parent_child = profiles["simple_vector_parent_child"]
     sparse_parent_child = profiles["simple_sparse_parent_child"]
     hybrid_parent_child = profiles["hybrid_parent_child"]
-    hybrid_parent_child_rerank = profiles["hybrid_parent_child_rerank"]
+    hybrid_parent_child_rerank_bge = profiles["hybrid_parent_child_rerank_bge"]
 
     assert vector_parent_child.strategy == "simple_vector"
     assert vector_parent_child.collections == ("children_a", "children_b")
@@ -71,32 +71,32 @@ def test_expanded_profiles_are_registered_without_changing_agent_mapping():
         parent_collection_suffix="_parent",
     )
 
-    assert hybrid_parent_child_rerank.strategy == "hybrid"
-    assert hybrid_parent_child_rerank.dense == DenseRetrievalParams(
+    assert hybrid_parent_child_rerank_bge.strategy == "hybrid"
+    assert hybrid_parent_child_rerank_bge.dense == DenseRetrievalParams(
         fetch_top_k=20,
         min_score=0.35,
         max_kept=None,
     )
-    assert hybrid_parent_child_rerank.sparse == SparseRetrievalParams(
+    assert hybrid_parent_child_rerank_bge.sparse == SparseRetrievalParams(
         fetch_top_k=20,
         min_score_ratio=0.35,
         gap_ratio=None,
         max_kept=None,
     )
-    assert hybrid_parent_child_rerank.fusion == FusionRetrievalParams(
+    assert hybrid_parent_child_rerank_bge.fusion == FusionRetrievalParams(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
         output_top_k=20,
     )
-    assert hybrid_parent_child_rerank.rerank == RerankRetrievalParams(output_top_k=5)
-    assert hybrid_parent_child_rerank.parent_child == ParentChildRetrievalParams(
+    assert hybrid_parent_child_rerank_bge.rerank == RerankRetrievalParams(output_top_k=5)
+    assert hybrid_parent_child_rerank_bge.parent_child == ParentChildRetrievalParams(
         parent_collection_suffix="_parent",
     )
-    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "simple_vector"
+    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "hybrid_rerank_bge"
 
 
-def test_hybrid_rerank_profile_is_registered_separately():
+def test_hybrid_rerank_bge_profile_is_registered_separately():
     profiles = build_retrieval_profiles(
         ("children_a", "children_b"),
         dense_vector_name="text-dense",
@@ -104,7 +104,7 @@ def test_hybrid_rerank_profile_is_registered_separately():
     )
 
     hybrid = profiles["hybrid"]
-    hybrid_rerank = profiles["hybrid_rerank"]
+    hybrid_rerank_bge = profiles["hybrid_rerank_bge"]
 
     assert hybrid.rerank is None
     assert hybrid.fusion == FusionRetrievalParams(
@@ -113,8 +113,8 @@ def test_hybrid_rerank_profile_is_registered_separately():
         weights={"dense": 1.0, "sparse": 1.0},
         output_top_k=5,
     )
-    assert hybrid_rerank.rerank == RerankRetrievalParams(output_top_k=5)
-    assert hybrid_rerank.fusion == FusionRetrievalParams(
+    assert hybrid_rerank_bge.rerank == RerankRetrievalParams(output_top_k=5)
+    assert hybrid_rerank_bge.fusion == FusionRetrievalParams(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},

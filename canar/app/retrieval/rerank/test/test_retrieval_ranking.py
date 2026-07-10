@@ -54,7 +54,7 @@ def test_bge_reranker_orders_hits_and_adds_rerank_score_without_model_load():
 
     assert [hit.text for hit in reranked] == ["second", "third"]
     assert [hit.rerank_score for hit in reranked] == [0.9, 0.4]
-    assert not hasattr(hits[0], "rerank_score")
+    assert all(hit.rerank_score is None for hit in hits)
     assert reranker.pairs == [
         ("query", "Document: first"),
         ("query", "Document: second"),
@@ -87,26 +87,40 @@ def test_reranker_rejects_blank_query_negative_top_k_and_missing_text():
         reranker.rerank("  ", [hit])
     with pytest.raises(ValueError, match="top_k must be greater than or equal to 0"):
         reranker.rerank("query", [hit], top_k=-1)
-    with pytest.raises(ValueError, match="candidate must contain a text/content field"):
-        reranker.rerank("query", [{"metadata": {"source": "docs"}}])
+    empty_hit = RetrievalHit(text="", collection="docs", score=1.0, score_norm=1.0)
+    with pytest.raises(ValueError, match="candidate text must be non-empty"):
+        reranker.rerank("query", [empty_hit])
 
 
-def test_build_reranker_defaults_to_gpu_ready_bge_and_rejects_unknown_name():
-    bge = build_reranker("bge", device="cuda", max_length=512)
-    qwen = build_reranker("qwen", device="cuda", max_length=256)
-    custom_bge = build_reranker("bge", model_name="custom/bge", device="cpu")
+@pytest.mark.parametrize(
+    ("name", "expected_type", "expected_model"),
+    [
+        ("bge-v2-m3", BGEReranker, "BAAI/bge-reranker-v2-m3"),
+        ("qwen-0.6b", QwenReranker, "Qwen/Qwen3-Reranker-0.6B"),
+        ("qwen-4b", QwenReranker, "Qwen/Qwen3-Reranker-4B"),
+        ("qwen-8b", QwenReranker, "Qwen/Qwen3-Reranker-8B"),
+    ],
+)
+def test_build_reranker_supports_only_registered_models(
+    name, expected_type, expected_model
+):
+    reranker = build_reranker(name, device="cuda", max_length=256)
 
-    assert isinstance(bge, BGEReranker)
-    assert bge.device == "cuda"
-    assert bge.max_length == 512
-    assert isinstance(qwen, QwenReranker)
-    assert qwen.device == "cuda"
-    assert qwen.max_length == 256
-    assert isinstance(custom_bge, BGEReranker)
-    assert custom_bge.model_name == "custom/bge"
-    assert custom_bge.device == "cpu"
+    assert isinstance(reranker, expected_type)
+    assert reranker.model_name == expected_model
+    assert reranker.device == "cuda"
+    assert reranker.max_length == 256
+
+
+@pytest.mark.parametrize("name", ["bge", "qwen", "cross-encoder"])
+def test_build_reranker_rejects_unregistered_names(name):
     with pytest.raises(ValueError, match="Unsupported reranker"):
-        build_reranker("cross-encoder")
+        build_reranker(name)
+
+
+def test_build_reranker_rejects_arbitrary_model_override():
+    with pytest.raises(TypeError, match="model_name"):
+        build_reranker("bge-v2-m3", model_name="custom/bge")
 
 
 def test_resolve_reranker_device_supports_auto_force_and_default_modes():

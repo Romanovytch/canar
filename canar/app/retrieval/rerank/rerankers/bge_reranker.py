@@ -3,13 +3,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from canar.app.retrieval.models import RetrievalHit
 from canar.app.retrieval.rerank.rerankers._candidate_utils import (
-    RerankerCandidateMixin,
+    candidate_text,
+    read_rerank_score,
     resolve_reranker_device,
+    with_rerank_score,
 )
 
 
-class BGEReranker(RerankerCandidateMixin):
+class BGEReranker:
     """Small BGE cross-encoder wrapper for already-retrieved candidates."""
 
     # Keep the default model focused on the requested BGE reranker benchmark target.
@@ -40,9 +43,9 @@ class BGEReranker(RerankerCandidateMixin):
     def rerank(
         self,
         query: str,
-        candidates: Sequence[Any],
+        candidates: Sequence[RetrievalHit],
         top_k: int | None = None,
-    ) -> list[Any]:
+    ) -> list[RetrievalHit]:
         """Return candidates sorted by BGE rerank score, highest first."""
         # Reject blank queries because pairwise scoring is meaningless without one.
         if not query or not query.strip():
@@ -57,7 +60,7 @@ class BGEReranker(RerankerCandidateMixin):
             return []
 
         # Build one cross-encoder pair per candidate while preserving input order.
-        documents = [self._candidate_text(candidate) for candidate in candidates]
+        documents = [candidate_text(candidate) for candidate in candidates]
         pairs = [(query, document) for document in documents]
 
         # Score every query-document pair with the local BGE sequence classifier.
@@ -65,14 +68,14 @@ class BGEReranker(RerankerCandidateMixin):
 
         # Attach rerank scores to shallow copies so retrieval scores stay untouched.
         scored_candidates = [
-            self._with_rerank_score(candidate, score)
+            with_rerank_score(candidate, score)
             for candidate, score in zip(candidates, scores, strict=True)
         ]
 
         # Sort by reranker score while keeping the original relative order for ties.
         ordered = sorted(
             enumerate(scored_candidates),
-            key=lambda item: (self._read_rerank_score(item[1]), -item[0]),
+            key=lambda item: (read_rerank_score(item[1]), -item[0]),
             reverse=True,
         )
         reranked = [candidate for _, candidate in ordered]

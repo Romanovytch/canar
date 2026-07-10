@@ -46,8 +46,8 @@ class ParentChildRetrievalParams:
 @dataclass(frozen=True)
 class RerankRetrievalParams:
     output_top_k: int = 5
-    # Profiles choose the reranker family; exact model overrides stay below this layer.
-    reranker_name: str = "bge"
+    # Profiles select an explicit model identifier from the factory allowlist.
+    reranker_name: str = "bge-v2-m3"
     device: str | None = "auto"
     max_length: int = 8192
 
@@ -129,3 +129,4 @@ class RetrievalHit:
     source_url: str | None = None
     section: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    rerank_score: float | None = None

@@ -8,8 +8,12 @@ return the candidates sorted by descending reranker score.
 
 ## Available Rerankers
 
-- `QwenReranker`: uses `Qwen/Qwen3-Reranker-8B`.
-- `BGEReranker`: uses `BAAI/bge-reranker-v2-m3`.
+- `qwen-0.6b`: uses `Qwen/Qwen3-Reranker-0.6B`.
+- `qwen-4b`: uses `Qwen/Qwen3-Reranker-4B`.
+- `qwen-8b`: uses `Qwen/Qwen3-Reranker-8B`.
+- `bge-v2-m3`: uses `BAAI/bge-reranker-v2-m3`.
+
+There is no size-implicit `qwen` alias; profiles must select an explicit size.
 
 Both classes expose the same public API:
 
@@ -20,8 +24,9 @@ reranker = BGEReranker()
 results = reranker.rerank(query=query, candidates=hits, top_k=10)
 ```
 
-The returned candidates preserve the original retrieval fields and score. Each
-result also receives a new `rerank_score` field used for ordering.
+The returned `RetrievalHit` objects preserve the original retrieval fields and
+score. Each result has `rerank_score` set to the score used for ordering; input
+hits remain unchanged with their existing `rerank_score` value.
 
 
 ## App Integration
@@ -33,7 +38,7 @@ in `profiles.py` with `RerankRetrievalParams`:
 ```python
 rerank=RerankRetrievalParams(
     output_top_k=5,
-    reranker_name="bge",
+    reranker_name="bge-v2-m3",
     device="auto",
     max_length=8192,
 )
@@ -77,6 +82,8 @@ also required at runtime.
 
 The runtime also needs access to download or load the model weights for:
 
+- `Qwen/Qwen3-Reranker-0.6B`
+- `Qwen/Qwen3-Reranker-4B`
 - `Qwen/Qwen3-Reranker-8B`
 - `BAAI/bge-reranker-v2-m3`
 

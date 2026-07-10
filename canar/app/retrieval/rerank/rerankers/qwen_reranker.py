@@ -3,13 +3,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from canar.app.retrieval.models import RetrievalHit
 from canar.app.retrieval.rerank.rerankers._candidate_utils import (
-    RerankerCandidateMixin,
+    candidate_text,
+    read_rerank_score,
     resolve_reranker_device,
+    with_rerank_score,
 )
 
 
-class QwenReranker(RerankerCandidateMixin):
+class QwenReranker:
     """Small Qwen3 reranker wrapper for already-retrieved candidates."""
 
     # Keep the default task instruction aligned with the Qwen3 reranker model card.
@@ -18,7 +21,7 @@ class QwenReranker(RerankerCandidateMixin):
     )
 
     # Prefer the current Qwen3 reranker target requested for this module.
-    DEFAULT_MODEL_NAME = "Qwen/Qwen3-Reranker-8B"
+    DEFAULT_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
 
     def __init__(
         self,
@@ -49,9 +52,9 @@ class QwenReranker(RerankerCandidateMixin):
     def rerank(
         self,
         query: str,
-        candidates: Sequence[Any],
+        candidates: Sequence[RetrievalHit],
         top_k: int | None = None,
-    ) -> list[Any]:
+    ) -> list[RetrievalHit]:
         """Return candidates sorted by Qwen rerank score, highest first."""
         # Reject blank queries because pairwise scoring is meaningless without one.
         if not query or not query.strip():
@@ -66,7 +69,7 @@ class QwenReranker(RerankerCandidateMixin):
             return []
 
         # Build one Qwen input string per candidate while preserving input order.
-        documents = [self._candidate_text(candidate) for candidate in candidates]
+        documents = [candidate_text(candidate) for candidate in candidates]
         pairs = [self._format_instruction(query=query, document=document) for document in documents]
 
         # Score every query-document pair with the local Qwen model.
@@ -74,14 +77,14 @@ class QwenReranker(RerankerCandidateMixin):
 
         # Attach rerank scores to shallow copies so retrieval scores stay untouched.
         scored_candidates = [
-            self._with_rerank_score(candidate, score)
+            with_rerank_score(candidate, score)
             for candidate, score in zip(candidates, scores, strict=True)
         ]
 
         # Sort by reranker score while keeping the original relative order for ties.
         ordered = sorted(
             enumerate(scored_candidates),
-            key=lambda item: (self._read_rerank_score(item[1]), -item[0]),
+            key=lambda item: (read_rerank_score(item[1]), -item[0]),
             reverse=True,
         )
         reranked = [candidate for _, candidate in ordered]

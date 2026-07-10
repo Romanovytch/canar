@@ -159,7 +159,7 @@ Use BGE first. Rerank is configured in the retrieval profile, not in `.env`:
 ```python
 rerank=RerankRetrievalParams(
     output_top_k=5,
-    reranker_name="bge",
+    reranker_name="bge-v2-m3",
     device="auto",
     max_length=8192,
 )
@@ -190,6 +190,9 @@ The first run may download or initialize:
 ```text
 Qdrant/bm25
 BAAI/bge-reranker-v2-m3
+Qwen/Qwen3-Reranker-0.6B
+Qwen/Qwen3-Reranker-4B
+Qwen/Qwen3-Reranker-8B
 ```
 
 That first run can be slow. Later runs should be faster because models are
@@ -201,13 +204,10 @@ The script prints:
 
 ```text
 HYBRID
-HYBRID + BGE RERANK
-```
-
-If you pass `--include-qwen`, it also prints:
-
-```text
-HYBRID + QWEN RERANK
+HYBRID + BGE-V2-M3 RERANK
+HYBRID + QWEN-0.6B RERANK
+HYBRID + QWEN-4B RERANK
+HYBRID + QWEN-8B RERANK
 ```
 
 Inside each section:
@@ -240,22 +240,20 @@ The question to ask is:
 Do the top 3 to 5 chunks after reranking give better context than the top 3 to 5 hybrid chunks?
 ```
 
-## 10. Run Qwen Only After BGE Works
+## 10. Model Resource Requirements
 
-Qwen is much heavier than BGE.
-
-
-```bash
-python canar/app/retrieval/rerank/compare/compare.py \
-  "comment filtrer un dataframe en R ?" \
-  --include-qwen
-```
-
-This may download and load:
+The comparison now runs every registered reranker automatically. The first run
+may download and load all of these models:
 
 ```text
+BAAI/bge-reranker-v2-m3
+Qwen/Qwen3-Reranker-0.6B
+Qwen/Qwen3-Reranker-4B
 Qwen/Qwen3-Reranker-8B
 ```
+
+Make sure the machine has enough disk, RAM, and GPU memory before running the
+full comparison.
 
 
 ## 11. Useful Overrides

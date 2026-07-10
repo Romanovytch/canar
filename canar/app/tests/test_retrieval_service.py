@@ -302,11 +302,86 @@ def test_retrieval_service_from_config_builds_profile_enabled_reranker(
         FakeConfig(),
         embed_client=FakeEmbedClient(),
         sparse_embed_client=FakeSparseEmbedClient(),
-        agent_profiles={"r_helpdesk": "hybrid_rerank"},
+        agent_profiles={"r_helpdesk": "hybrid_rerank_bge"},
     )
 
     assert service.reranker is not None
-    assert built == [("bge", "auto", 8192, None)]
+    assert built == [("bge-v2-m3", "auto", 8192, None)]
+
+
+def test_retrieval_service_from_config_builds_reranker_per_active_profile(
+    monkeypatch,
+):
+    class FakeQdrantAdapter:
+        def __init__(self, url: str, api_key: str | None = None):
+            self.url = url
+            self.api_key = api_key
+
+    import canar.app.retrieval.service as service_module
+
+    built = []
+
+    def fake_build_reranker(
+        name: str,
+        *,
+        device: str | None,
+        max_length: int,
+        model_name: str | None = None,
+    ):
+        reranker = FakeReranker()
+        built.append((name, device, max_length, model_name, reranker))
+        return reranker
+
+    def fake_build_profiles(
+        collections: tuple[str, ...],
+        dense_vector_name: str | None = None,
+        sparse_vector_name: str | None = None,
+    ) -> dict[str, RetrievalProfile]:
+        return {
+            "hybrid_rerank_bge": RetrievalProfile(
+                name="hybrid_rerank_bge",
+                strategy="hybrid",
+                collections=collections,
+                rerank=RerankRetrievalParams(
+                    reranker_name="bge-v2-m3",
+                    device="cpu",
+                    max_length=512,
+                ),
+            ),
+            "hybrid_rerank_qwen": RetrievalProfile(
+                name="hybrid_rerank_qwen",
+                strategy="hybrid",
+                collections=collections,
+                rerank=RerankRetrievalParams(
+                    reranker_name="qwen-8b",
+                    device="cuda",
+                    max_length=1024,
+                ),
+            ),
+        }
+
+    monkeypatch.setattr(service_module, "QdrantRetrievalAdapter", FakeQdrantAdapter)
+    monkeypatch.setattr(service_module, "build_reranker", fake_build_reranker)
+    monkeypatch.setattr(service_module, "build_retrieval_profiles", fake_build_profiles)
+
+    service = RetrievalService.from_config(
+        FakeConfig(),
+        embed_client=FakeEmbedClient(),
+        sparse_embed_client=FakeSparseEmbedClient(),
+        agent_profiles={
+            "bench:bge": "hybrid_rerank_bge",
+            "bench:qwen": "hybrid_rerank_qwen",
+        },
+    )
+
+    assert [entry[:4] for entry in built] == [
+        ("bge-v2-m3", "cpu", 512, None),
+        ("qwen-8b", "cuda", 1024, None),
+    ]
+    assert service.rerankers == {
+        "hybrid_rerank_bge": built[0][4],
+        "hybrid_rerank_qwen": built[1][4],
+    }
 
 
 def test_retrieval_service_from_config_builds_profile_reranker_with_model_override(
@@ -350,12 +425,12 @@ def test_retrieval_service_from_config_builds_profile_reranker_with_model_overri
                 collections=collections,
                 vector_name=sparse_vector_name,
             ),
-            "hybrid_rerank": RetrievalProfile(
-                name="hybrid_rerank",
+            "hybrid_rerank_bge": RetrievalProfile(
+                name="hybrid_rerank_bge",
                 strategy="hybrid",
                 collections=collections,
                 rerank=RerankRetrievalParams(
-                    reranker_name="qwen",
+                    reranker_name="qwen-8b",
                     device="cpu",
                     max_length=512,
                 ),
@@ -370,11 +445,11 @@ def test_retrieval_service_from_config_builds_profile_reranker_with_model_overri
         FakeConfig(),
         embed_client=FakeEmbedClient(),
         sparse_embed_client=FakeSparseEmbedClient(),
-        agent_profiles={"r_helpdesk": "hybrid_rerank"},
+        agent_profiles={"r_helpdesk": "hybrid_rerank_bge"},
     )
 
     assert service.reranker is fake_reranker
-    assert built == [("qwen", "cpu", 512, None)]
+    assert built == [("qwen-8b", "cpu", 512, None)]
 
 
 def test_retrieval_service_reranks_hybrid_hits_when_enabled():
@@ -396,8 +471,8 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
         embed_client=dense_embed,
         sparse_embed_client=sparse_embed,
         profiles={
-            "hybrid_rerank": RetrievalProfile(
-                name="hybrid_rerank",
+            "hybrid_rerank_bge": RetrievalProfile(
+                name="hybrid_rerank_bge",
                 strategy="hybrid",
                 collections=("docs",),
                 rerank=RerankRetrievalParams(
@@ -405,7 +480,7 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
                 ),
             )
         },
-        agent_profiles={"r_helpdesk": "hybrid_rerank"},
+        agent_profiles={"r_helpdesk": "hybrid_rerank_bge"},
         strategies={"hybrid": strategy},
         reranker=reranker,
     )
@@ -416,7 +491,7 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
     assert strategy_queries == [
         RetrievalQuery(
             text="comment filtrer ?",
-            profile_name="hybrid_rerank",
+            profile_name="hybrid_rerank_bge",
             dense_vector=[1.0, 2.0],
             sparse_vector=SparseVector(indices=[3], values=[0.7]),
         )
@@ -529,9 +604,11 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         "simple_sparse",
         "simple_sparse_parent_child",
         "hybrid",
-        "hybrid_rerank",
+        "hybrid_rerank_bge",
+        "hybrid_rerank_qwen",
         "hybrid_parent_child",
-        "hybrid_parent_child_rerank",
+        "hybrid_parent_child_rerank_bge",
+        "hybrid_parent_child_rerank_qwen",
     }
     assert "parent_child" in service.hit_expanders
     assert vector_parent_child.strategy == "simple_vector"
