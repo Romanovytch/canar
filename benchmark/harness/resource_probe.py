@@ -1,19 +1,18 @@
 """
 Optional resource probe for the benchmark.
 
-Measures CPU, memory and (best-effort) GPU usage around a phase of the pipeline
-(retrieval / generation). It is a **no-op unless enabled**, so the default run
-keeps zero overhead and needs no extra dependency.
+Two separate things, on purpose (issue #53):
 
-    with probe(enabled) as usage:
-        ... do the work ...
-    # usage.cpu_s / peak_rss_mb / gpu_util_pct / gpu_mem_mb are now filled in
+- `probe(enabled)` measures **per-phase** CPU + memory of the benchmark process
+  (retrieval / generation). These are the signals that differ between retrieval
+  strategies, so they go into the per-strategy comparison.
+- `gpu_context()` takes a **one-shot** snapshot of GPU usage for the whole run.
+  GPU work all happens in the LLM server (same model for every strategy), so GPU
+  memory is a property of the setup, not of the retrieval method — it is reported
+  once as run context, not compared per strategy.
 
-CPU + memory are process-level via `psutil`. GPU is **device-level** via
-`pynvml`: generation and embedding run in a separate server process (calls go
-out over an HTTP endpoint), so per-process GPU attribution isn't possible — the
-GPU numbers are the whole device's usage during the phase. Both libraries are
-optional; when missing, the corresponding fields stay `None`.
+CPU + memory use `psutil`; GPU uses `pynvml`. Both are optional: when missing,
+the corresponding values are simply absent. `probe` is a no-op when disabled.
 """
 
 from __future__ import annotations
@@ -39,24 +38,9 @@ _MB = 1024 * 1024
 
 @dataclass
 class ResourceUsage:
-    """Resource cost of one phase. Fields stay None when unmeasured.
-
-    GPU memory is reported two ways so runs stay comparable (issue #53):
-    `gpu_mem_delta_mb` is the growth caused by the phase (peak minus the value
-    at phase start) — the number to compare methods with. `gpu_mem_total_mb`
-    is the absolute device usage at peak, kept for context; on a shared server
-    it includes the LLM server's loaded models and other tenants.
-    """
-    cpu_s: float | None = None            # CPU seconds consumed (user + system)
-    peak_rss_mb: float | None = None      # peak resident memory of this process
-    gpu_util_pct: float | None = None     # mean GPU utilization (device-wide)
-    gpu_mem_delta_mb: float | None = None  # GPU memory the phase added (device-wide)
-    gpu_mem_total_mb: float | None = None  # absolute device memory at peak
-    # Per-process attribution (NVML compute processes), best-effort: total GPU
-    # memory held by compute processes at peak, and a "name(pid)=MB" breakdown
-    # so the operator can see who actually holds it (e.g. the ollama runner).
-    gpu_mem_procs_mb: float | None = None
-    gpu_procs: str | None = None
+    """Per-phase resource cost of the benchmark process. None when unmeasured."""
+    cpu_s: float | None = None        # CPU seconds consumed (user + system)
+    peak_rss_mb: float | None = None  # peak resident memory of this process
 
 
 def _gpu_handle():
@@ -70,30 +54,14 @@ def _gpu_handle():
         return None
 
 
-class _Sampler(threading.Thread):
-    """Background thread: polls process RSS and (optionally) GPU while a phase runs."""
+class _RssSampler(threading.Thread):
+    """Background thread: polls the process RSS to capture its peak during a phase."""
 
-    def __init__(self, proc, gpu_handle):
+    def __init__(self, proc):
         super().__init__(daemon=True)
         self._proc = proc
-        self._gpu = gpu_handle
         self._stop_event = threading.Event()
         self.peak_rss = 0
-        self.gpu_util_samples: list[float] = []
-        self.peak_gpu_mem = 0
-        # Per-process attribution at the peak tick: total bytes held by compute
-        # processes and the {pid: bytes} snapshot behind that total.
-        self.peak_proc_mem = 0
-        self.peak_proc_breakdown: dict[int, int] = {}
-        # Device memory at phase start: the peak is compared against this to get
-        # the phase's own delta, so numbers don't accumulate across runs (#53).
-        self.baseline_gpu_mem = 0
-        if gpu_handle is not None:
-            try:
-                self.baseline_gpu_mem = pynvml.nvmlDeviceGetMemoryInfo(gpu_handle).used
-                self.peak_gpu_mem = self.baseline_gpu_mem
-            except Exception:
-                pass
 
     def run(self) -> None:
         while not self._stop_event.is_set():
@@ -101,29 +69,6 @@ class _Sampler(threading.Thread):
                 self.peak_rss = max(self.peak_rss, self._proc.memory_info().rss)
             except Exception:
                 pass
-            if self._gpu is not None:
-                try:
-                    self.gpu_util_samples.append(
-                        pynvml.nvmlDeviceGetUtilizationRates(self._gpu).gpu
-                    )
-                    self.peak_gpu_mem = max(
-                        self.peak_gpu_mem, pynvml.nvmlDeviceGetMemoryInfo(self._gpu).used
-                    )
-                except Exception:
-                    pass
-                try:
-                    procs = pynvml.nvmlDeviceGetComputeRunningProcesses(self._gpu)
-                    breakdown = {
-                        p.pid: p.usedGpuMemory
-                        for p in procs
-                        if p.usedGpuMemory is not None
-                    }
-                    total = sum(breakdown.values())
-                    if total > self.peak_proc_mem:
-                        self.peak_proc_mem = total
-                        self.peak_proc_breakdown = breakdown
-                except Exception:
-                    pass
             self._stop_event.wait(_SAMPLE_INTERVAL_S)
 
     def stop(self) -> None:
@@ -131,26 +76,12 @@ class _Sampler(threading.Thread):
         self.join(timeout=1.0)
 
 
-def _format_proc_breakdown(breakdown: dict[int, int]) -> str:
-    """Render {pid: bytes} as 'name(pid)=MB; ...', resolving names best-effort."""
-    parts = []
-    for pid, mem in sorted(breakdown.items(), key=lambda kv: -kv[1]):
-        name = "?"
-        if psutil is not None:
-            try:
-                name = psutil.Process(pid).name()
-            except Exception:
-                pass
-        parts.append(f"{name}({pid})={round(mem / _MB)}")
-    return "; ".join(parts)
-
-
 @contextmanager
 def probe(enabled: bool):
-    """Measure resource usage for the wrapped block.
+    """Measure per-phase CPU + memory of the benchmark process.
 
-    Yields a ResourceUsage that is filled in when the block exits. When disabled
-    (or psutil is missing) it yields an empty ResourceUsage and does nothing, so
+    Yields a ResourceUsage filled in when the block exits. When disabled (or
+    psutil is missing) it yields an empty ResourceUsage and does nothing, so
     callers need no branching.
     """
     usage = ResourceUsage()
@@ -160,7 +91,7 @@ def probe(enabled: bool):
 
     proc = psutil.Process()
     cpu_before = proc.cpu_times()
-    sampler = _Sampler(proc, _gpu_handle())
+    sampler = _RssSampler(proc)
     try:
         sampler.peak_rss = proc.memory_info().rss  # seed with the starting value
     except Exception:
@@ -177,16 +108,46 @@ def probe(enabled: bool):
         )
         if sampler.peak_rss:
             usage.peak_rss_mb = sampler.peak_rss / _MB
-        if sampler.gpu_util_samples:
-            usage.gpu_util_pct = sum(sampler.gpu_util_samples) / len(sampler.gpu_util_samples)
-        if sampler.peak_gpu_mem:
-            usage.gpu_mem_total_mb = sampler.peak_gpu_mem / _MB
-            usage.gpu_mem_delta_mb = max(
-                0.0, (sampler.peak_gpu_mem - sampler.baseline_gpu_mem) / _MB
-            )
-        if sampler.peak_proc_breakdown:
-            usage.gpu_mem_procs_mb = sampler.peak_proc_mem / _MB
-            usage.gpu_procs = _format_proc_breakdown(sampler.peak_proc_breakdown)
+
+
+def _format_proc_breakdown(breakdown: dict[int, int]) -> str:
+    """Render {pid: bytes} as 'name(pid)=MB; ...', resolving names best-effort."""
+    parts = []
+    for pid, mem in sorted(breakdown.items(), key=lambda kv: -kv[1]):
+        name = "?"
+        if psutil is not None:
+            try:
+                name = psutil.Process(pid).name()
+            except Exception:
+                pass
+        parts.append(f"{name}({pid})={round(mem / _MB)}")
+    return "; ".join(parts)
+
+
+def gpu_context() -> dict:
+    """One-shot GPU snapshot for the whole run (best-effort).
+
+    Describes the GPU and how much of it the LLM server holds — a property of
+    the setup, shared by every retrieval strategy. Call it once the model is
+    loaded (e.g. after the runs) so the footprint is real. Empty dict when no
+    GPU / pynvml.
+    """
+    gpu = _gpu_handle()
+    if gpu is None:
+        return {}
+    ctx: dict[str, object] = {}
+    try:
+        ctx["gpu_mem_used_mb"] = round(pynvml.nvmlDeviceGetMemoryInfo(gpu).used / _MB)
+    except Exception:
+        pass
+    try:
+        procs = pynvml.nvmlDeviceGetComputeRunningProcesses(gpu)
+        breakdown = {p.pid: p.usedGpuMemory for p in procs if p.usedGpuMemory is not None}
+        if breakdown:
+            ctx["gpu_procs"] = _format_proc_breakdown(breakdown)
+    except Exception:
+        pass
+    return ctx
 
 
 def hardware_profile() -> dict:
