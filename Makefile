@@ -11,6 +11,7 @@ help:
 	@echo "  make venv          - Create venv (.venv_canar)"
 	@echo "  make install       - Install CanaR (editable) + dev tools"
 	@echo "  make install-torch - Install CUDA 12.8 PyTorch wheel"
+	@echo "  make install-rerank - Install optional reranking dependencies"
 	@echo "  make run           - Run CanaR (entrypoint or Streamlit fallback)"
 	@echo "  make test          - Run tests (pytest)"
 	@echo "  make lint          - Run ruff lint (check)"
