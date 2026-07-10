@@ -67,31 +67,37 @@ the **resource cost** of each retrieval strategy, not just answer quality. It's
 
 Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
 
-Only the metrics that actually discriminate methods are surfaced (#53).
-Deliberately not reported: `generation_cpu_s` (mostly HTTP-wait, misleading),
-per-phase RSS (constant process baseline), and the absolute device memory
-(only ever grows on a shared server — the source of the original confusion).
+**Per-strategy columns** — the signals that actually differ between retrieval
+strategies. These are the ones in `comparison.csv`:
 
 | Column | What it measures | What it does NOT measure |
 |---|---|---|
 | `retrieval_latency_s` / `generation_latency_s` | wall-clock time of each phase | — |
 | `retrieval_cpu_s` | CPU seconds of the **benchmark process** during retrieval (real method cost, e.g. BM25) | the LLM server's CPU |
 | `peak_rss_mb` | peak memory of the **benchmark process** in the turn | the LLM server's memory |
-| `gpu_util_pct` | mean GPU utilization, **whole device** | this process only |
-| `gpu_mem_delta_mb` | GPU memory the turn **added** (peak minus the value at phase start) — the number to compare methods with | memory already resident (loaded models) |
-| `gpu_mem_procs_mb` | GPU memory held by **compute processes** at peak (NVML per-process) | memory NVML can't attribute (driver/context overhead) |
-| `gpu_procs` | who holds it: `name(pid)=MB` breakdown (e.g. the ollama runner) | — informational, excluded from score means |
 
-When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
-runs stay comparable across computers.
+**Run-level context** — written once per run to `run_context.txt` (not compared
+per strategy). GPU work all happens in the LLM server, which is the same model
+for every strategy, so GPU usage describes the setup, not the method:
 
-Needs `psutil` (in the `benchmark` extra, which also carries `nvidia-ml-py` for
-the GPU columns; without a GPU they stay empty). **Caveat:** generation and
-embedding run in a separate server process (e.g. Ollama) on a shared GPU, so
-GPU numbers are device-level. `gpu_mem_delta_mb` isolates each run's own
-growth; `gpu_mem_total_mb` will look large and stable because the server keeps
-models loaded — that is expected, not a leak. The clean per-strategy signals
-are time, CPU, process memory, and the GPU delta.
+| Field | Meaning |
+|---|---|
+| `gpu` / `cpu_cores` / `ram_gb` | the machine (also stamped on every row) |
+| `gpu_mem_used_mb` | device GPU memory in use once the model is loaded |
+| `gpu_procs` | who holds it: `name(pid)=MB` (e.g. the ollama runner) |
+
+Why GPU is not per-strategy: retrieval never touches the GPU in this setup
+(embeddings go out over HTTP); the GPU is busy only during generation, and that
+is the same LLM for dense, sparse and hybrid. So a per-strategy GPU number would
+only reflect the shared model (and the one-time model load), not the method —
+misleading. It is reported once as context instead.
+
+Deliberately not reported per turn: `generation_cpu_s` (mostly HTTP-wait), and
+absolute device GPU memory (only ever grows on a shared server — the source of
+the original #53 confusion).
+
+Needs `psutil` (in the `benchmark` extra, which also carries `nvidia-ml-py`;
+without a GPU the run-context GPU fields are simply absent).
 
 ## Notes
 
