@@ -41,7 +41,11 @@ ignore = []
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
-
+rerank = [
+  "transformers>=4.51,<5.0",
+  "accelerate>=0.34,<2.0",
+  "safetensors>=0.4.5,<1.0",
+]
 # Benchmark dependencies (eval harness & resource monitoring including GPU).
 # The rest of what the benchmark needs — qdrant-client, python-dotenv, fastembed — are already core deps above.
 # Install with: pip install -e ".[benchmark]"

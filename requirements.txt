@@ -1,5 +1,9 @@
 streamlit>=1.35
 fastembed>=0.8.0
+torch>=2.6,<3.0
+transformers>=4.51,<5.0
+accelerate>=0.34,<2.0
+safetensors>=0.4.5,<1.0
 python-dotenv>=1.0.1
 openai>=1.40.0
 qdrant-client>=1.10.0

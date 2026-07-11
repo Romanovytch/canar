@@ -91,7 +91,6 @@ RetrievalProfile(
     name="simple_vector",
     strategy="simple_vector",
     collections=cfg.qdrant_collections,
-    top_k=5,
     score_threshold=0.35,
     source_filter="utilitr",
     fallback_top_k=3,
@@ -105,7 +104,6 @@ RetrievalProfile(
     name="simple_sparse",
     strategy="simple_sparse",
     collections=cfg.qdrant_collections,
-    top_k=5,
     score_threshold=0.35,
     source_filter="utilitr",
     fallback_top_k=3,
@@ -113,20 +111,19 @@ RetrievalProfile(
 )
 ```
 
-Hybrid implemented profile:
+Hybrid rerank implemented profile:
 
 ```python
 RetrievalProfile(
-    name="hybrid",
+    name="hybrid_rerank",
     strategy="hybrid",
     collections=cfg.qdrant_collections,
-    top_k=5,
     score_threshold=0.35,
     source_filter="utilitr",
     fallback_top_k=5,
-    dense=DenseRetrievalParams(top_k=10, min_score=0.35, max_kept=None),
+    dense=DenseRetrievalParams(fetch_top_k=20, min_score=0.35, max_kept=None),
     sparse=SparseRetrievalParams(
-        top_k=10,
+        fetch_top_k=20,
         min_score_ratio=0.35,
         gap_ratio=None,
         max_kept=None,
@@ -135,7 +132,10 @@ RetrievalProfile(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        final_top_k=5,
+        output_top_k=20,
+    ),
+    rerank=RerankRetrievalParams(
+        output_top_k=5,
     ),
 )
 ```
@@ -147,12 +147,11 @@ RetrievalProfile(
     name="parent_child_vector",
     strategy="parent_child_vector",
     collections=cfg.qdrant_collections,
-    top_k=5,
     score_threshold=0.35,
     source_filter="utilitr",
     fallback_top_k=3,
     vector_name=cfg.qdrant_dense_vector_name or None,
-    dense=DenseRetrievalParams(top_k=5, min_score=0.35, max_kept=None),
+    dense=DenseRetrievalParams(fetch_top_k=5, min_score=0.35, max_kept=None),
     parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
 )
 ```
@@ -172,7 +171,7 @@ The `simple_vector` strategy preserves the previous behavior:
 - Generate a dense query embedding using `EmbedClient`.
 - Query each configured Qdrant collection with the dense vector.
 - Apply the `source == "utilitr"` filter by default.
-- Retrieve `top_k=5` hits per collection.
+- Retrieve `fetch_top_k=5` hits per collection.
 - Min-max normalize scores within each collection.
 - Fuse all collection hits by sorting on `(score_norm, score)` descending.
 - Keep hits with `score_norm >= 0.35`.
@@ -185,7 +184,7 @@ The `simple_sparse` strategy mirrors `simple_vector` with a sparse query vector:
 - Generate a sparse query vector using `FastEmbedClient` only when the selected profile requires it.
 - Query each configured Qdrant collection with the sparse vector.
 - Apply the `source == "utilitr"` filter by default.
-- Retrieve `top_k=5` hits per collection.
+- Retrieve `fetch_top_k=5` hits per collection.
 - Min-max normalize scores within each collection.
 - Fuse all collection hits by sorting on `(score_norm, score)` descending.
 - Keep hits with `score_norm >= 0.35`.
@@ -205,7 +204,12 @@ Ranks are one-based to preserve the original local fusion behavior. With the def
 
 The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weights are `[fusion.weights["dense"], fusion.weights["sparse"]]`. This mirrors Qdrant weighted RRF semantics, where weights must follow the prefetch order exactly.
 
-The legacy flat hybrid fields (`dense_top_k`, `sparse_top_k`, `fusion`, `final_top_k`, `rrf_k`, `dense_weight`, `sparse_weight`) are still accepted and resolved into nested parameter blocks for compatibility.
+Hybrid retrieval uses structured dense, sparse, fusion, and rerank parameter blocks directly.
+
+Reranking is enabled by selecting a rerank profile, such as `hybrid_rerank`, with
+`rerank=RerankRetrievalParams(...)`. On rerank profiles, `fusion.output_top_k` is
+the RRF candidate pool sent to rerank, and `rerank.output_top_k` is the final
+reranked result count.
 
 ## Data model
 
@@ -220,14 +224,14 @@ class SparseVector:
 
 @dataclass(frozen=True)
 class DenseRetrievalParams:
-    top_k: int = 5
+    fetch_top_k: int = 5
     min_score: float | None = None
     max_kept: int | None = None
 
 
 @dataclass(frozen=True)
 class SparseRetrievalParams:
-    top_k: int = 5
+    fetch_top_k: int = 5
     min_score_ratio: float | None = None
     gap_ratio: float | None = None
     max_kept: int | None = None
@@ -238,7 +242,7 @@ class FusionRetrievalParams:
     method: str = "rrf"
     rrf_k: int = 60
     weights: dict[str, float] = field(default_factory=dict)
-    final_top_k: int = 5
+    output_top_k: int = 5
 
 
 @dataclass(frozen=True)
@@ -247,11 +251,19 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class RerankRetrievalParams:
+    enabled: bool = False
+    output_top_k: int = 5
+    reranker_name: str = "bge"
+    device: str | None = "auto"
+    max_length: int = 8192
+
+
+@dataclass(frozen=True)
 class RetrievalProfile:
     name: str
     strategy: str
     collections: tuple[str, ...]
-    top_k: int = 5
     score_threshold: float = 0.35
     source_filter: str | None = "utilitr"
     fallback_top_k: int = 3
@@ -259,9 +271,8 @@ class RetrievalProfile:
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
     fusion: FusionRetrievalParams | str | None = None
-    dense_top_k: int | None = None
-    sparse_top_k: int | None = None
-    final_top_k: int | None = None
+    rerank: RerankRetrievalParams | None = None
+    output_top_k: int | None = None
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 1.0

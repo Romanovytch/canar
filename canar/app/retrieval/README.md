@@ -34,7 +34,7 @@ external YAML configuration for retrieval profiles.
 The first profile is `simple_vector`. Its configurable fields include:
 
 - `collections`
-- `top_k`
+- `dense.fetch_top_k` / `sparse.fetch_top_k`
 - `score_threshold`
 - `source_filter`
 - `fallback_top_k`
@@ -47,9 +47,9 @@ RetrievalProfile(
     name="hybrid",
     strategy="hybrid",
     collections=collections,
-    dense=DenseRetrievalParams(top_k=30, min_score=0.72, max_kept=10),
+    dense=DenseRetrievalParams(fetch_top_k=30, min_score=0.72, max_kept=10),
     sparse=SparseRetrievalParams(
-        top_k=30,
+        fetch_top_k=30,
         min_score_ratio=0.10,
         gap_ratio=0.20,
         max_kept=8,
@@ -58,13 +58,12 @@ RetrievalProfile(
         method="weighted_rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.2},
-        final_top_k=8,
+        output_top_k=8,
     ),
 )
 ```
 
-The previous flat hybrid fields, such as `dense_top_k`, `sparse_top_k`, `rrf_k`,
-`dense_weight`, and `sparse_weight`, are still resolved for compatibility.
+Use the structured dense, sparse, fusion, and rerank parameter blocks directly.
 
 Parent-child profiles use the same dense/sparse/fusion blocks for child retrieval and a
 small parent-child block for parent lookup behavior:
@@ -74,7 +73,7 @@ RetrievalProfile(
     name="parent_child_vector",
     strategy="parent_child_vector",
     collections=collections,
-    dense=DenseRetrievalParams(top_k=5, min_score=0.35),
+    dense=DenseRetrievalParams(fetch_top_k=5, min_score=0.35),
     parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
 )
 ```

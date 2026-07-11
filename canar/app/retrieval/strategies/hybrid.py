@@ -46,7 +46,7 @@ class HybridStrategy:
         return fusion.fuse(
             # Weight order follows the ranked-list order, matching Qdrant's prefetch semantics.
             [dense_hits, sparse_hits],
-            top_k=fusion_params.final_top_k,
+            top_k=fusion_params.output_top_k,
             weights=[
                 fusion_params.weights.get("dense", 1.0),
                 fusion_params.weights.get("sparse", 1.0),

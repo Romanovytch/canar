@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help up down reset logs venv install run test lint format format-check ci
+.PHONY: help up down reset logs venv install install-torch run test lint format format-check ci
 
 help:
 	@echo "Targets:"
@@ -8,8 +8,10 @@ help:
 	@echo "  make down          - Stop containers"
 	@echo "  make reset         - Stop + remove volumes"
 	@echo "  make logs          - Follow docker logs"
-	@echo "  make venv          - Create venv (.venv)"
+	@echo "  make venv          - Create venv (.venv_canar)"
 	@echo "  make install       - Install CanaR (editable) + dev tools"
+	@echo "  make install-torch - Install CUDA 12.8 PyTorch wheel"
+	@echo "  make install-rerank - Install optional reranking dependencies"
 	@echo "  make run           - Run CanaR (entrypoint or Streamlit fallback)"
 	@echo "  make test          - Run tests (pytest)"
 	@echo "  make lint          - Run ruff lint (check)"
@@ -33,21 +35,27 @@ venv:
 	python -m venv .venv
 
 install:
-	. .venv/bin/activate && pip install -U pip && pip install -e ".[dev]"
+	. .venv_canar/bin/activate && pip install -U pip && pip install -e ".[dev]"
+
+install-torch:
+	. .venv_canar/bin/activate &&pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
+
+install-rerank:
+	. .venv_canar/bin/activate && pip install -e ".[rerank]"
 
 run:
-	. .venv/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
+	. .venv_canar/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
 
 test:
-	. .venv/bin/activate && pytest -q
+	. .venv_canar/bin/activate && pytest -q
 
 lint:
-	. .venv/bin/activate && ruff check .
+	. .venv_canar/bin/activate && ruff check .
 
 format:
-	. .venv/bin/activate && ruff format . && ruff check . --fix
+	. .venv_canar/bin/activate && ruff format . && ruff check . --fix
 
 format-check:
-	. .venv/bin/activate && ruff format --check .
+	. .venv_canar/bin/activate && ruff format --check .
 
 ci: lint format-check test

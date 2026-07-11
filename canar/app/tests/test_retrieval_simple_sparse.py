@@ -32,8 +32,8 @@ def test_simple_sparse_normalizes_sorts_and_prunes_hits():
         name="simple_sparse",
         strategy="simple_sparse",
         collections=("docs_a", "docs_b"),
-        top_k=5,
         score_threshold=0.35,
+        sparse=SparseRetrievalParams(fetch_top_k=5),
         source_filter="utilitr",
         fallback_top_k=3,
         vector_name="text-sparse",
@@ -74,7 +74,7 @@ def test_simple_sparse_uses_sparse_params_for_ratio_gap_and_max_kept():
         strategy="simple_sparse",
         collections=("docs",),
         sparse=SparseRetrievalParams(
-            top_k=4,
+            fetch_top_k=4,
             min_score_ratio=0.5,
             gap_ratio=0.3,
             max_kept=2,
@@ -110,8 +110,8 @@ def test_simple_sparse_keeps_top_fallback_when_no_hits_survive_threshold():
         name="simple_sparse",
         strategy="simple_sparse",
         collections=("docs",),
-        top_k=5,
         score_threshold=2.0,
+        sparse=SparseRetrievalParams(fetch_top_k=5),
         fallback_top_k=2,
     )
     adapter = FakeSparseAdapter(

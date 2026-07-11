@@ -31,8 +31,8 @@ def test_simple_vector_normalizes_sorts_and_prunes_hits():
         name="simple_vector",
         strategy="simple_vector",
         collections=("docs_a", "docs_b"),
-        top_k=5,
         score_threshold=0.35,
+        dense=DenseRetrievalParams(fetch_top_k=5, min_score=0.35),
         source_filter="utilitr",
         fallback_top_k=3,
     )
@@ -66,7 +66,7 @@ def test_simple_vector_uses_dense_params_for_top_k_threshold_and_max_kept():
         name="hybrid_dense",
         strategy="simple_vector",
         collections=("docs",),
-        dense=DenseRetrievalParams(top_k=4, min_score=0.25, max_kept=2),
+        dense=DenseRetrievalParams(fetch_top_k=4, min_score=0.25, max_kept=2),
     )
     adapter = FakeDenseAdapter(
         {
@@ -92,8 +92,8 @@ def test_simple_vector_keeps_top_fallback_when_all_hits_are_below_threshold():
         name="simple_vector",
         strategy="simple_vector",
         collections=("docs",),
-        top_k=5,
         score_threshold=2.0,
+        dense=DenseRetrievalParams(fetch_top_k=5, min_score=2.0),
         source_filter="utilitr",
         fallback_top_k=3,
     )
