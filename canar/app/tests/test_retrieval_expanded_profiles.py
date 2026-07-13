@@ -93,7 +93,8 @@ def test_expanded_profiles_are_registered_without_changing_agent_mapping():
     assert hybrid_parent_child_rerank_bge.parent_child == ParentChildRetrievalParams(
         parent_collection_suffix="_parent",
     )
-    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "hybrid_rerank_bge"
+    assert AGENT_RETRIEVAL_PROFILES["generic_agent"] == "hybrid_summary"
+    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "simple_vector"
 
 
 def test_hybrid_rerank_bge_profile_is_registered_separately():

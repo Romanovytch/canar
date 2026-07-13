@@ -7,14 +7,14 @@ from canar.app.retrieval.models import (
     RerankRetrievalParams,
     RetrievalProfile,
     SparseRetrievalParams,
+    SummaryRetrievalParams,
 )
 
 AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
-    "generic_agent": "hybrid_rerank_bge",
+    "generic_agent": "hybrid_summary",
     "r_helpdesk": "simple_vector",
     "sas_to_r": None,
 }
-
 
 
 def build_retrieval_profiles(
@@ -22,7 +22,7 @@ def build_retrieval_profiles(
     dense_vector_name: str | None = None,
     sparse_vector_name: str | None = None,
 ) -> dict[str, RetrievalProfile]:
-    return {
+    profiles = {
         "simple_vector": RetrievalProfile(
             name="simple_vector",
             strategy="simple_vector",
@@ -91,18 +91,18 @@ def build_retrieval_profiles(
             name="hybrid",
             strategy="hybrid",
             collections=collections,
-            score_threshold=0.35,
+            score_threshold=0.7,
             source_filter=None,
             fallback_top_k=5,
             vector_name=sparse_vector_name or None,
             dense=DenseRetrievalParams(
                 fetch_top_k=10,
-                min_score=0.35,
+                min_score=0.7,
                 max_kept=None,
             ),
             sparse=SparseRetrievalParams(
                 fetch_top_k=10,
-                min_score_ratio=0.35,
+                min_score_ratio=0.7,
                 gap_ratio=None,
                 max_kept=None,
             ),
@@ -142,8 +142,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="bge-v2-m3",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_rerank_qwen_0.6b": RetrievalProfile(
@@ -175,8 +175,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-0.6b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_rerank_qwen_4b": RetrievalProfile(
@@ -208,8 +208,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-4b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_rerank_qwen_8b": RetrievalProfile(
@@ -241,8 +241,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-8b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_parent_child": RetrievalProfile(
@@ -306,11 +306,10 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="bge-v2-m3",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
-
         "hybrid_parent_child_rerank_qwen_0.6b": RetrievalProfile(
             name="hybrid_parent_child_rerank_qwen_0.6b",
             strategy="hybrid",
@@ -343,8 +342,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-0.6b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_parent_child_rerank_qwen_4b": RetrievalProfile(
@@ -379,8 +378,8 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-4b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
         "hybrid_parent_child_rerank_qwen_8b": RetrievalProfile(
@@ -415,8 +414,38 @@ def build_retrieval_profiles(
             rerank=RerankRetrievalParams(
                 output_top_k=5,
                 reranker_name="qwen-8b",
-                device= "auto",
-                max_length= 8192,
+                device="auto",
+                max_length=8192,
             ),
         ),
     }
+    profiles["hybrid_summary"] = RetrievalProfile(
+        name="hybrid_summary",
+        strategy="hybrid",
+        collections=collections,
+        score_threshold=0.7,
+        source_filter=None,
+        fallback_top_k=5,
+        vector_name=sparse_vector_name or None,
+        dense=DenseRetrievalParams(
+            fetch_top_k=10,
+            min_score=0.7,
+            max_kept=None,
+        ),
+        sparse=SparseRetrievalParams(
+            fetch_top_k=10,
+            min_score_ratio=0.7,
+            gap_ratio=None,
+            max_kept=None,
+        ),
+        fusion=FusionRetrievalParams(
+            method="rrf",
+            rrf_k=60,
+            weights={"dense": 3.0, "sparse": 1.0 },
+            output_top_k=2,
+        ),
+        summary=SummaryRetrievalParams(
+            collection_suffix="_summaries",
+        ),
+    )
+    return profiles

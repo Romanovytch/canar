@@ -206,6 +206,13 @@ The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weig
 
 Hybrid retrieval uses structured dense, sparse, fusion, and rerank parameter blocks directly.
 
+Summary retrieval is a structured hybrid option. A profile with
+`summary=SummaryRetrievalParams(collection_suffix=...)` runs the same dense, sparse,
+thresholding, fallback, and RRF flow against each base collection plus the configured
+suffix. It returns the summary points directly and cannot be combined with
+`parent_child` expansion. The suffix is configured directly in the profile, alongside
+the other structured retrieval parameters.
+
 Reranking is enabled by selecting a rerank profile, such as `hybrid_rerank`, with
 `rerank=RerankRetrievalParams(...)`. On rerank profiles, `fusion.output_top_k` is
 the RRF candidate pool sent to rerank, and `rerank.output_top_k` is the final
@@ -251,6 +258,11 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class SummaryRetrievalParams:
+    collection_suffix: str
+
+
+@dataclass(frozen=True)
 class RerankRetrievalParams:
     enabled: bool = False
     output_top_k: int = 5
@@ -278,6 +290,7 @@ class RetrievalProfile:
     sparse_weight: float = 1.0
     parent_child: ParentChildRetrievalParams | None = None
     parent_collection_suffix: str = "_parent"
+    summary: SummaryRetrievalParams | None = None
 
 
 @dataclass(frozen=True)

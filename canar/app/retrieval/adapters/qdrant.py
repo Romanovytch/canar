@@ -30,7 +30,14 @@ class QdrantRetrievalAdapter:
         if vector_name is not None:
             query_args["using"] = vector_name
 
-        points = self.client.query_points(**query_args).points
+        try:
+            points = self.client.query_points(**query_args).points
+        except Exception as exc:
+            vector_hint = f" named {vector_name!r}" if vector_name else ""
+            raise RuntimeError(
+                f"Dense retrieval failed for collection {collection!r}. "
+                f"Ensure the collection contains a compatible dense vector{vector_hint}."
+            ) from exc
         return [self._to_hit(collection, point) for point in points]
 
     def search_sparse(

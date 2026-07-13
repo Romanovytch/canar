@@ -604,11 +604,16 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         "simple_sparse",
         "simple_sparse_parent_child",
         "hybrid",
+        "hybrid_summary",
         "hybrid_rerank_bge",
-        "hybrid_rerank_qwen",
+        "hybrid_rerank_qwen_0.6b",
+        "hybrid_rerank_qwen_4b",
+        "hybrid_rerank_qwen_8b",
         "hybrid_parent_child",
         "hybrid_parent_child_rerank_bge",
-        "hybrid_parent_child_rerank_qwen",
+        "hybrid_parent_child_rerank_qwen_0.6b",
+        "hybrid_parent_child_rerank_qwen_4b",
+        "hybrid_parent_child_rerank_qwen_8b",
     }
     assert "parent_child" in service.hit_expanders
     assert vector_parent_child.strategy == "simple_vector"
