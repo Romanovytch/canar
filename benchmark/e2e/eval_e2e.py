@@ -69,8 +69,7 @@ load_dotenv(REPO_ROOT / ".env", override=True)
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
 from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
-from resource_probe import hardware_profile, probe  # noqa: E402
-
+from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
 
 from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
@@ -315,14 +314,10 @@ def make_pipeline(search):
         if not answer.strip():
             answer = "[EMPTY_ANSWER]"
 
-        # GPU is device-level; report the peak seen across the two phases as the
-        # turn's figure (None when not measured / no GPU).
-        gpu_util = max(
-            [v for v in (r_usage.gpu_util_pct, g_usage.gpu_util_pct) if v is not None],
-            default=None,
-        )
-        gpu_mem = max(
-            [v for v in (r_usage.gpu_mem_mb, g_usage.gpu_mem_mb) if v is not None],
+        # Peak process memory over the turn (GPU is not per-strategy — it's the
+        # shared LLM — so it's captured once as run context, not here; see main).
+        peak_rss = max(
+            [v for v in (r_usage.peak_rss_mb, g_usage.peak_rss_mb) if v is not None],
             default=None,
         )
 
@@ -335,11 +330,7 @@ def make_pipeline(search):
             retrieval_latency_s=retrieval_latency_s,
             generation_latency_s=generation_latency_s,
             retrieval_cpu_s=r_usage.cpu_s,
-            retrieval_peak_rss_mb=r_usage.peak_rss_mb,
-            generation_cpu_s=g_usage.cpu_s,
-            generation_peak_rss_mb=g_usage.peak_rss_mb,
-            gpu_util_pct=gpu_util,
-            gpu_mem_mb=gpu_mem,
+            peak_rss_mb=peak_rss,
         )
 
     return ask_canar
@@ -380,9 +371,7 @@ def main() -> None:
     if summaries:
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
                 "retrieval_latency_s", "generation_latency_s",
-                "retrieval_cpu_s", "retrieval_peak_rss_mb",
-                "generation_cpu_s", "generation_peak_rss_mb",
-                "gpu_util_pct", "gpu_mem_mb",
+                "retrieval_cpu_s", "peak_rss_mb",
                 "faithfulness", "answer_relevancy"]
         rows = [
             {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
@@ -394,6 +383,17 @@ def main() -> None:
         if len(summaries) > 1:
             print("\n=== Profile comparison (means) ===")
             print(comparison.to_string(index=False))
+
+        # Run-level GPU context: captured once, now that the model is loaded.
+        # GPU usage is the shared LLM's, the same for every strategy, so it
+        # describes the setup rather than a method — reported here, not per row.
+        if MEASURE_RESOURCES:
+            context = {**PROVENANCE, **gpu_context()}
+            lines = [f"{k}: {v}" for k, v in context.items()]
+            (run_dir / "run_context.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print("\n=== Run context (shared setup, not per-strategy) ===")
+            print("\n".join(lines))
+
         print(f"\nRun saved to {run_dir}")
 
 
