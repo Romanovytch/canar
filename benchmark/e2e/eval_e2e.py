@@ -68,15 +68,17 @@ load_dotenv(REPO_ROOT / ".env", override=True)
 # CanaR's real modules — the exact code the Streamlit app runs.
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
 from bench_config import load_config  # noqa: E402
+# APOSTROPHE NORMALIZATION WORKAROUND: remove this import and unwrap
+# `judge_embeddings` below to restore direct RAGAS OpenAIEmbeddings usage.
+from embedding_normalization import NormalizingEmbeddings  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import hardware_profile, probe  # noqa: E402
-
 
 from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.config import AppConfig  # noqa: E402
-from canar.app.retrieval.models import RetrievalQuery  # noqa: E402
+from canar.app.retrieval.profiles import build_retrieval_profiles  # noqa: E402
 from canar.app.retrieval.service import RetrievalService  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -145,12 +147,43 @@ chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model,{"reasoning_effort": 
 # FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
 sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_sparse_model else None
 
-# The product's retrieval service builds the real strategies exactly as the app
-# does — simple_vector (dense), simple_sparse (BM25), and hybrid (dense + sparse
-# fused). The benchmark drives these instead of reconstructing them, so it
-# measures the colleagues' actual retrieval code, hybrid composition included.
+# The product's retrieval service builds the real profiles exactly as the app
+# does — simple_vector (dense), simple_sparse (BM25), hybrid (dense + sparse
+# fused), and profile-level additions such as rerank. Benchmark labels may be
+# shorter than product profile names (e.g. "dense" -> "simple_vector"), so resolve
+# each configured row to the real RetrievalProfile before constructing the
+# service. That lets rerank profiles be discovered at service construction time.
+profiles = build_retrieval_profiles(
+    tuple(cfg.qdrant_collections),
+    dense_vector_name=cfg.qdrant_dense_vector_name,
+    sparse_vector_name=cfg.qdrant_sparse_vector_name,
+)
 
-service = RetrievalService.from_config(cfg, embed, sparse_embed)
+
+def product_profile_name(spec) -> str:
+    """Map a benchmark row to the product RetrievalProfile it measures."""
+    if spec.name in profiles:
+        return spec.name
+    if spec.strategy in profiles:
+        return spec.strategy
+    sys.exit(
+        f"Profile {spec.name!r} / strategy {spec.strategy!r} not available in "
+        f"RetrievalService profiles (have: {list(profiles)})."
+    )
+
+
+BENCH_AGENT_PROFILES = {
+    f"benchmark:{spec.name}": product_profile_name(spec)
+    for spec in BENCH.profiles
+}
+
+service = RetrievalService.from_config(
+    cfg,
+    embed,
+    sparse_embed,
+    profiles=profiles,
+    agent_profiles=BENCH_AGENT_PROFILES,
+)
 
 # RAGAS judge — reuses the same local LLM/embeddings endpoints.
 # (LangChain wrappers because RAGAS expects them; this is eval-side only,
@@ -163,11 +196,16 @@ judge_llm = ChatOpenAI(
     reasoning_effort=cfg.llm_thinking,   #
     extra_body={"keep_alive": "10m"},   # avoid Ollama unloading the model between judge calls
 )
-judge_embeddings = OpenAIEmbeddings(
-    model=cfg.embed_model,
-    openai_api_base=cfg.embed_base,
-    openai_api_key=cfg.embed_key or "EMPTY",
-    check_embedding_ctx_length=False,   # send raw strings; Ollama rejects token arrays
+# APOSTROPHE NORMALIZATION WORKAROUND: RAGAS-generated strings also pass through
+# bge-m3, so wrap both its sync and async embedding calls. To remove it, assign
+# the inner `OpenAIEmbeddings(...)` directly to `judge_embeddings`.
+judge_embeddings = NormalizingEmbeddings(
+    OpenAIEmbeddings(
+        model=cfg.embed_model,
+        openai_api_base=cfg.embed_base,
+        openai_api_key=cfg.embed_key or "EMPTY",
+        check_embedding_ctx_length=False,  # send raw strings; Ollama rejects token arrays
+    )
 )
 
 
@@ -197,8 +235,8 @@ def check_environment() -> None:
 def preflight() -> None:
     """Fail fast with a clear message if the AgoRa collection isn't ready."""
     check_environment()
-    # Validate only the vectors the active profiles actually query.
-    strategies = {p.strategy for p in BENCH.profiles}
+    # Validate only the vectors the active product profiles actually query.
+    strategies = {profiles[product_profile_name(p)].strategy for p in BENCH.profiles}
     needs_dense = bool(strategies & {"simple_vector", "hybrid"})
     needs_sparse = bool(strategies & {"simple_sparse", "hybrid"})
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
@@ -260,31 +298,31 @@ def preflight() -> None:
 
 def build_searcher(spec):
     """
-    Resolve the product strategy named by a config profile and return a callable
-    that runs it. The strategy — and, for `hybrid`, its dense + sparse
-    sub-strategies and fusion — is the one `RetrievalService` built from
-    canar/.env, so the benchmark measures the shipped retrieval code, not a
-    reimplementation. The query vectors are embedded the same way
-    `RetrievalService.search` does, per strategy.
+    Resolve the benchmark row to a product retrieval profile and return a callable
+    that runs the same service path as the app. This matters for profile-level
+    behavior such as reranking: `hybrid_rerank_bge` uses the hybrid strategy first,
+    then `RetrievalService.search` applies the configured reranker.
     """
-    strategy = service.strategies.get(spec.strategy)
+    profile_name = product_profile_name(spec)
+    profile = service.profiles[profile_name]
+    strategy = service.strategies.get(profile.name) or service.strategies.get(profile.strategy)
     if strategy is None:
-        sys.exit(f"Strategy {spec.strategy!r} not available in RetrievalService "
-                 f"(have: {list(service.strategies)}).")
+        sys.exit(
+            f"Profile {profile_name!r} uses strategy {profile.strategy!r}, but no strategy "
+            f"is available in RetrievalService (have: {list(service.strategies)})."
+        )
 
-    needs_dense = spec.strategy in {"simple_vector", "hybrid", "parent_child_hybrid"}
-    needs_sparse = spec.strategy in {"simple_sparse", "hybrid", "parent_child_hybrid"}
+    needs_sparse = profile.strategy in {"simple_sparse", "hybrid", "parent_child_hybrid"}
     if needs_sparse and sparse_embed is None:
-        sys.exit(f"Profile uses {spec.strategy!r} but FASTEMBED_SPARSE_MODEL is unset "
-                 "in canar/.env — no sparse encoder available.")
+        sys.exit(
+            f"Profile {profile_name!r} uses {profile.strategy!r} but FASTEMBED_SPARSE_MODEL "
+            "is unset in canar/.env — no sparse encoder available."
+        )
+
+    agent_key = f"benchmark:{spec.name}"
 
     def search(question: str):
-        return strategy.search(RetrievalQuery(
-            text=question,
-            profile_name=spec.name,
-            dense_vector=embed.embed_query(question) if needs_dense else None,
-            sparse_vector=sparse_embed.embed_query(question) if needs_sparse else None,
-        ))
+        return service.search(agent_key, question)
 
     return search
 
@@ -384,10 +422,24 @@ def main() -> None:
                 "generation_cpu_s", "generation_peak_rss_mb",
                 "gpu_util_pct", "gpu_mem_mb",
                 "faithfulness", "answer_relevancy"]
-        rows = [
-            {"profile": name, **{c: round(df[c].mean(), 3) for c in cols if c in df.columns}}
-            for name, df in summaries
-        ]
+        rows = []
+        for name, df in summaries:
+            has_error = (
+                "pipeline_status" in df.columns
+                and (df["pipeline_status"] == "ERROR").any()
+            )
+            row = {"profile": name}
+            if has_error:
+                errors = df.loc[df["pipeline_status"] == "ERROR", "pipeline_error"]
+                row["pipeline_status"] = "ERROR"
+                row["pipeline_error"] = " | ".join(dict.fromkeys(errors.astype(str)))
+                row.update({c: "ERROR" for c in cols if c in df.columns})
+            else:
+                row["pipeline_status"] = "OK"
+                row["pipeline_error"] = ""
+                row.update({c: round(pd.to_numeric(df[c], errors="coerce").mean(), 3)
+                            for c in cols if c in df.columns})
+            rows.append(row)
         comparison = pd.DataFrame(rows)
         run_dir.mkdir(parents=True, exist_ok=True)
         comparison.to_csv(run_dir / "comparison.csv", index=False)

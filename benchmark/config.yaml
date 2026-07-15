@@ -16,8 +16,8 @@
 # MEASURE_RESOURCES.
 
 run:
-  dataset: datasets/utilitr_questions.csv   # path relative to benchmark/
-  agent: r_helpdesk
+  dataset: datasets/benchmark_dicovarg21_v0.yaml   # path relative to benchmark/
+  agent: generic_agent
   limit: null                  # null = all 12 questions; set an int for a quick pass
   judge_model: qwen2.5:7b      # non-reasoning judge (fast, no timeouts); null = product LLM
   gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers
@@ -28,18 +28,52 @@ run:
 # model and collection — and results stay comparable across machines.
 environment:
   embed_model: bge-m3
-  collection: utilitr_v2       # multi-vector collection (dense + sparse), built by AgoRa
+  collection: dico       # multi-vector collection (dense + sparse), built by AgoRa
 
 profiles:
   # The three retrieval strategies, compared side by side. Each names a strategy
   # RetrievalService built from canar/.env; settings live in the product's
   # profiles.py. sparse and hybrid need FASTEMBED_SPARSE_MODEL set and the
   # collection ingested with sparse vectors.
-  - name: dense
-    strategy: simple_vector
+ 
+ - name: simple_vector
+   strategy: simple_vector
 
-  - name: sparse
-    strategy: simple_sparse
+ - name: simple_vector_parent_child
+   strategy: simple_vector
 
-  - name: hybrid
-    strategy: hybrid
+ - name: simple_sparse
+   strategy: simple_sparse
+
+ - name: simple_sparse_parent_child
+   strategy: simple_sparse
+
+ - name: hybrid
+   strategy: hybrid
+
+ - name: hybrid_rerank_bge
+   strategy: hybrid
+
+ - name: hybrid_rerank_qwen_0.6b
+   strategy: hybrid
+
+ - name: hybrid_rerank_qwen_4b
+   strategy: hybrid
+
+ #- name: hybrid_rerank_qwen_8b
+ #  strategy: hybrid
+
+ - name: hybrid_parent_child
+   strategy: hybrid
+
+ - name: hybrid_parent_child_rerank_bge
+   strategy: hybrid
+
+ - name: hybrid_parent_child_rerank_qwen_0.6b
+   strategy: hybrid
+
+ - name: hybrid_parent_child_rerank_qwen_4b
+   strategy: hybrid
+
+ #- name: hybrid_parent_child_rerank_qwen_8b
+  # strategy: hybrid
