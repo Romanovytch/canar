@@ -1,4 +1,3 @@
-
 def assemble_context(citations: list[dict]) -> tuple[str, list[dict]]:
     lines = []
     srcs = []
@@ -9,14 +8,17 @@ def assemble_context(citations: list[dict]) -> tuple[str, list[dict]]:
         section = p.get("section") or ""
         text = p.get("text") or ""
         lines.append(f"[{label}] {section}\n{text}\n")
-        srcs.append({"label": label, "url": url, "section": section, "collection": h.get("collection")})
+        srcs.append(
+            {"label": label, "url": url, "section": section, "collection": h.get("collection")}
+        )
     return "\n---\n".join(lines), srcs
 
+
 def build_universal_messages(
-    system_prompt: str, 
-    user_question: str, 
-    file_content: str | None = None, 
-    rag_context: str | None = None
+    system_prompt: str,
+    user_question: str,
+    file_content: str | None = None,
+    rag_context: str | None = None,
 ) -> list[dict]:
     """
     Assemble dynamiquement le prompt final en fonction des éléments disponibles.
@@ -39,5 +41,5 @@ def build_universal_messages(
     # 4. Assemblage final au format OpenAI / ChatClient
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": final_user_text}
+        {"role": "user", "content": final_user_text},
     ]

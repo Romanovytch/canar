@@ -17,15 +17,42 @@ class ChatClient:
         top_p: float = 1.0,
         max_tokens: int = 2048,
     ) -> Iterable[str]:
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+
+        api_args = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        resp = self.client.chat.completions.create(**api_args)
         for chunk in resp:
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield delta.content
+
+    def sync_chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        top_p: float = 1.0,
+        max_tokens: int = 2048,
+        allowed_tools_schemas: list[dict] = None,
+    ):
+
+        api_args = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        if allowed_tools_schemas and len(allowed_tools_schemas) > 0:
+            api_args["tools"] = allowed_tools_schemas
+            api_args["tool_choice"] = "auto"
+
+        return self.client.chat.completions.create(**api_args)

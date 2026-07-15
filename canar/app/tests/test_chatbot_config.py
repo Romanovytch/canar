@@ -1,13 +1,15 @@
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
 from canar.app.chatbots.chatbot_config import ChatbotConfig
-from sqlmodel import Session, create_engine, SQLModel, select
 
 VALID_YAML_DATA = {
     "id": "test_bot_1",
     "name": "Bot de Test",
     "description": "Un bot pour les tests unitaires",
-    "system_prompt": "Tu es un bot de test. Réponds brièvement."
+    "system_prompt": "Tu es un bot de test. Réponds brièvement.",
 }
+
 
 def test_valid_chatbot_creation():
     """
@@ -31,12 +33,10 @@ def test_missing_mandatory_fields():
     """
     Vérifie que l'absence de champ obligatoire bloque la validation!
     """
-    invalid_data = {
-        "id":"bad_bot",
-        "description": "Je n'ai pas de nom, ni de prompt"
-    }
+    invalid_data = {"id": "bad_bot", "description": "Je n'ai pas de nom, ni de prompt"}
 
     assert ChatbotConfig.checkChatbot(invalid_data) is False
+
 
 def test_invalid_top_k_constraint():
     """Vérifie que le top k est strictement positif"""
@@ -45,6 +45,7 @@ def test_invalid_top_k_constraint():
 
     assert ChatbotConfig.checkChatbot(invalid_data) is False
 
+
 def test_invalid_score_threshold_constraint():
     """Vérifie que le scrore score_threshold ne dépasse pas 1.0"""
     invalid_data = VALID_YAML_DATA.copy()
@@ -52,12 +53,14 @@ def test_invalid_score_threshold_constraint():
 
     assert ChatbotConfig.checkChatbot(invalid_data) is False
 
+
 def test_invalid_max_context_token():
     """Vérifie la limite basse du context (>=256)"""
     invalid_data = VALID_YAML_DATA.copy()
     invalid_data["max_context_tokens"] = 100
 
     assert ChatbotConfig.checkChatbot(invalid_data) is False
+
 
 @pytest.fixture
 def mock_db():
@@ -70,6 +73,7 @@ def mock_db():
             self.engine = engine
 
     return DummyDB()
+
 
 def test_save_chatbot_upsert(mock_db):
     """"""
@@ -89,6 +93,7 @@ def test_save_chatbot_upsert(mock_db):
 
         assert db_bot_updated.name == "Nom modifié"
 
+
 def test_delete_chatbot(mock_db):
     """"""
     bot = ChatbotConfig.createChatbot(VALID_YAML_DATA)
@@ -102,6 +107,7 @@ def test_delete_chatbot(mock_db):
 
         assert deleted is True
         assert session.get(ChatbotConfig, "test_bot_1") is None
+
 
 def test_delete_non_existent_chatbot(mock_db):
     """"""

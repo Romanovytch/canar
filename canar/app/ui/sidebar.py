@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ..state import DB
-
 from canar.app.chatbots.chatbot_config import ChatbotConfig
+
+from ..state import DB
 
 # AGENT_LABELS = {
 #     "r_helpdesk": "Assistant R",
@@ -13,11 +13,15 @@ from canar.app.chatbots.chatbot_config import ChatbotConfig
 
 
 def sidebar(
-    db: DB, user_id: int, current_conv_id: int | None, agent_options: list[str]
-    , current_agent: str, chatbot_list: list[ChatbotConfig]
+    db: DB,
+    user_id: int,
+    current_conv_id: int | None,
+    agent_options: list[str],
+    current_agent: str,
+    chatbot_list: list[ChatbotConfig],
 ):
-    
-    AGENT_LABELS = { bot.id:bot.name for bot in chatbot_list }
+
+    AGENT_LABELS = {bot.id: bot.name for bot in chatbot_list}
 
     st.sidebar.header("Conversations")
 
