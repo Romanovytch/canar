@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import mimetypes
 import time
@@ -12,14 +11,15 @@ from sqlmodel import Session, select
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.retrieval import search_qdrant
-from canar.app.bot_tools.registry import ToolRegistry
+
+# from canar.app.bot_tools.registry import ToolRegistry
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.config import AppConfig
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
 from canar.app.utils.llm_utils import assemble_context, build_universal_messages
-from canar.app.yaml_loader import load_bot_tools_on_boot, load_chatbot_on_boot
+from canar.app.yaml_loader import load_chatbot_on_boot
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -38,13 +38,13 @@ def init_app_agent_data(_db: DB):
     load_chatbot_on_boot(yaml_path, _db)
 
 
-@st.cache_resource()
-def init_tool_registry() -> ToolRegistry:
-    yaml_path = "canar/app/bot_tools/tools_config.yaml"
-    return load_bot_tools_on_boot(yaml_path)
+# @st.cache_resource()
+# def init_tool_registry() -> ToolRegistry:
+#     yaml_path = "canar/app/bot_tools/tools_config.yaml"
+#     return load_bot_tools_on_boot(yaml_path)
 
 
-tool_registry = init_tool_registry()
+# tool_registry = init_tool_registry()
 
 init_app_agent_data(db)
 
@@ -296,7 +296,7 @@ if user_input:
 
     allowed_tools = current_bot.allowed_tools
 
-    allowed_tools_schemas = asyncio.run(tool_registry.get_all_tools_schemas(allowed_tools))
+    # allowed_tools_schemas = asyncio.run(tool_registry.get_all_tools_schemas(allowed_tools))
 
     if not allowed_tools or len(allowed_tools) == 0:
         gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
@@ -316,7 +316,7 @@ if user_input:
                     messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    allowed_tools_schemas=allowed_tools_schemas,
+                    # allowed_tools_schemas=allowed_tools_schemas,
                 )
 
                 llm_msg = response.choices[0].message
@@ -328,7 +328,8 @@ if user_input:
                         st.write(f"Appel à l'outil {tool_name}...")
                         try:
                             tool_args = json.loads(tool_call.function.arguments)
-                            result = asyncio.run(tool_registry.execute_tool(tool_name, tool_args))
+                            result = None
+                            # asyncio.run(tool_registry.execute_tool(tool_name, tool_args))
                             st.write("Données récupérées avec succès")
                         except Exception as e:
                             result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"

@@ -1,10 +1,12 @@
 from pathlib import Path
+
 import yaml
 from sqlmodel import Session
+
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 
 
-def load_chatbot_on_boot(yaml_path: str|Path, db):
+def load_chatbot_on_boot(yaml_path: str | Path, db):
     """
     Lire le fichier YAML et orchestre le chargement des chatbots dans la base de données.
     """
@@ -15,7 +17,7 @@ def load_chatbot_on_boot(yaml_path: str|Path, db):
         return
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as exc:
         print(f"[Erreur Fatale] Syntaxe YAML invalide : {exc}")
@@ -34,7 +36,7 @@ def load_chatbot_on_boot(yaml_path: str|Path, db):
 
                     if not success:
                         raise ValueError(f"Le chatbot '{bot.id}' a echoué aux règles métiers.")
-                    
+
             session.commit()
             print(f"[Succès] {len(list_bot)} chatbots chargés et validé dans la base de données.")
         except Exception as e:
