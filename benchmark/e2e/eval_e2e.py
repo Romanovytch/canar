@@ -70,6 +70,7 @@ load_dotenv(REPO_ROOT / ".env", override=True)
 from bench_config import load_config  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
+from token_counter import TokenCounter, summarize_token_usage  # noqa: E402
 
 from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
@@ -139,6 +140,10 @@ if MEASURE_RESOURCES:
 # CanaR clients (product code).
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model,{"reasoning_effort": cfg.llm_thinking})
+
+# Token counter (#64): prefers the configured model's tokenizer, then tiktoken,
+# then a heuristic. Set BENCH_TOKENIZER to a HF model name for exact counts.
+token_counter = TokenCounter(os.environ.get("BENCH_TOKENIZER"))
 
 # Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
 # FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
@@ -321,6 +326,10 @@ def make_pipeline(search):
             default=None,
         )
 
+        # Token usage (#64): the prompt we just sent and the answer we got back.
+        input_tokens = token_counter.count_prompt(messages)
+        output_tokens = token_counter.count_text(answer)
+
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.
         return PipelineOutput(
@@ -331,6 +340,9 @@ def make_pipeline(search):
             generation_latency_s=generation_latency_s,
             retrieval_cpu_s=r_usage.cpu_s,
             peak_rss_mb=peak_rss,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
         )
 
     return ask_canar
@@ -369,6 +381,7 @@ def main() -> None:
     # also saved as comparison.csv at the run folder's root, so the run is a
     # self-contained artifact.
     if summaries:
+        # Means of the quality/latency/resource metrics, one row per profile.
         cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
                 "retrieval_latency_s", "generation_latency_s",
                 "retrieval_cpu_s", "peak_rss_mb",
@@ -378,21 +391,30 @@ def main() -> None:
             for name, df in summaries
         ]
         comparison = pd.DataFrame(rows)
+
+        # Token usage per profile — avg / min / max / total (#64) — merged into
+        # the same comparison table (no separate file).
+        token_usage = summarize_token_usage(summaries)
+        if not token_usage.empty:
+            comparison = comparison.merge(token_usage, on="profile", how="left")
+
         run_dir.mkdir(parents=True, exist_ok=True)
         comparison.to_csv(run_dir / "comparison.csv", index=False)
         if len(summaries) > 1:
-            print("\n=== Profile comparison (means) ===")
+            print("\n=== Profile comparison ===")
             print(comparison.to_string(index=False))
 
-        # Run-level GPU context: captured once, now that the model is loaded.
-        # GPU usage is the shared LLM's, the same for every strategy, so it
-        # describes the setup rather than a method — reported here, not per row.
+        # Run-level context: things shared by every strategy, written once.
+        # Which tokenizer produced the token counts (#64), plus — when measuring
+        # resources — the GPU usage, which is the shared LLM's rather than a
+        # method's, so it belongs here and not in the per-strategy comparison.
+        context = {**PROVENANCE, "token_tokenizer": token_counter.source}
         if MEASURE_RESOURCES:
-            context = {**PROVENANCE, **gpu_context()}
-            lines = [f"{k}: {v}" for k, v in context.items()]
-            (run_dir / "run_context.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-            print("\n=== Run context (shared setup, not per-strategy) ===")
-            print("\n".join(lines))
+            context.update(gpu_context())
+        lines = [f"{k}: {v}" for k, v in context.items()]
+        (run_dir / "run_context.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("\n=== Run context (shared setup, not per-strategy) ===")
+        print("\n".join(lines))
 
         print(f"\nRun saved to {run_dir}")
 

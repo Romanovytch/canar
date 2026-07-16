@@ -123,6 +123,9 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
             generation_latency_s=0.2,
             retrieval_cpu_s=0.05,
             peak_rss_mb=120.0,
+            input_tokens=300,
+            output_tokens=40,
+            total_tokens=340,
         )
 
     out_df = run_benchmark(
@@ -136,11 +139,12 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
         file_label="res",
         group_dir=tmp_path,
     )
-    for col in RESOURCE_COLS:
+    for col in RESOURCE_COLS + ("input_tokens", "output_tokens", "total_tokens"):
         assert col in out_df.columns
     metrics = pd.read_csv(tmp_path / "res" / "metrics.csv")
     assert metrics["retrieval_cpu_s"].iloc[0] == 0.05
     assert metrics["peak_rss_mb"].iloc[0] == 120.0
+    assert metrics["total_tokens"].iloc[0] == 340
 
 
 def test_no_resource_fields_no_columns(stub_ragas, tmp_path):
