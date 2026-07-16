@@ -67,20 +67,37 @@ the **resource cost** of each retrieval strategy, not just answer quality. It's
 
 Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
 
-| Column | Meaning |
+**Per-strategy columns** — the signals that actually differ between retrieval
+strategies. These are the ones in `comparison.csv`:
+
+| Column | What it measures | What it does NOT measure |
+|---|---|---|
+| `retrieval_latency_s` / `generation_latency_s` | wall-clock time of each phase | — |
+| `retrieval_cpu_s` | CPU seconds of the **benchmark process** during retrieval (real method cost, e.g. BM25) | the LLM server's CPU |
+| `peak_rss_mb` | peak memory of the **benchmark process** in the turn | the LLM server's memory |
+
+**Run-level context** — written once per run to `run_context.txt` (not compared
+per strategy). GPU work all happens in the LLM server, which is the same model
+for every strategy, so GPU usage describes the setup, not the method:
+
+| Field | Meaning |
 |---|---|
-| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of that phase |
-| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak process memory in that phase |
-| `gpu_util_pct` / `gpu_mem_mb` | GPU utilization / memory — **device-level** |
+| `gpu` / `cpu_cores` / `ram_gb` | the machine (also stamped on every row) |
+| `gpu_mem_used_mb` | device GPU memory in use once the model is loaded |
+| `gpu_procs` | who holds it: `name(pid)=MB` (e.g. the ollama runner) |
 
-When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
-runs stay comparable across computers.
+Why GPU is not per-strategy: retrieval never touches the GPU in this setup
+(embeddings go out over HTTP); the GPU is busy only during generation, and that
+is the same LLM for dense, sparse and hybrid. So a per-strategy GPU number would
+only reflect the shared model (and the one-time model load), not the method —
+misleading. It is reported once as context instead.
 
-Needs `psutil` (in the `benchmark` extra). GPU columns need `nvidia-ml-py`
-(`pip install -e ".[benchmark-gpu]"`); without it they stay empty. **Caveat:**
-generation/embedding run in a separate server process, so GPU numbers are the
-whole device's usage during the phase, not this process's — the clean
-per-strategy signals are time, CPU and memory.
+Deliberately not reported per turn: `generation_cpu_s` (mostly HTTP-wait), and
+absolute device GPU memory (only ever grows on a shared server — the source of
+the original #53 confusion).
+
+Needs `psutil` (in the `benchmark` extra, which also carries `nvidia-ml-py`;
+without a GPU the run-context GPU fields are simply absent).
 
 ## Notes
 

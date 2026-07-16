@@ -1,7 +1,7 @@
-"""Step 1 — resource_probe: no-op when disabled, numeric CPU/memory when enabled."""
+"""resource_probe: per-phase CPU/memory via probe(); one-shot GPU via gpu_context()."""
 
 import resource_probe
-from resource_probe import ResourceUsage, hardware_profile, probe
+from resource_probe import ResourceUsage, gpu_context, hardware_profile, probe
 
 psutil_available = resource_probe.psutil is not None
 
@@ -18,8 +18,6 @@ def test_disabled_is_a_noop():
     assert isinstance(usage, ResourceUsage)
     assert usage.cpu_s is None
     assert usage.peak_rss_mb is None
-    assert usage.gpu_util_pct is None
-    assert usage.gpu_mem_mb is None
 
 
 def test_enabled_measures_cpu_and_memory():
@@ -34,12 +32,56 @@ def test_enabled_measures_cpu_and_memory():
         _burn_cpu_and_memory()
     assert usage.cpu_s is not None and usage.cpu_s >= 0.0
     assert usage.peak_rss_mb is not None and usage.peak_rss_mb > 0.0
-    # GPU fields are best-effort: numeric when a GPU + pynvml exist, else None.
-    assert usage.gpu_util_pct is None or usage.gpu_util_pct >= 0.0
-    assert usage.gpu_mem_mb is None or usage.gpu_mem_mb > 0.0
 
 
 def test_hardware_profile_has_core_keys():
     info = hardware_profile()
     for key in ("cpu", "os", "python"):
         assert key in info and info[key]
+
+
+class _FakeNvml:
+    """Minimal NVML stand-in for the one-shot gpu_context() snapshot."""
+
+    class _Mem:
+        def __init__(self, used):
+            self.used = used
+
+    class _Proc:
+        def __init__(self, pid, used):
+            self.pid = pid
+            self.usedGpuMemory = used
+
+    def __init__(self, used, procs):
+        self._used = used
+        self._procs = procs
+
+    def nvmlDeviceGetMemoryInfo(self, handle):
+        return self._Mem(self._used)
+
+    def nvmlDeviceGetComputeRunningProcesses(self, handle):
+        return self._procs
+
+
+def test_gpu_context_reports_used_memory_and_names_holders(monkeypatch):
+    mb = 1024 * 1024
+    fake = _FakeNvml(
+        used=66_000 * mb,
+        procs=[
+            _FakeNvml._Proc(4242, 61_000 * mb),
+            _FakeNvml._Proc(4243, None),  # unattributable — skipped
+        ],
+    )
+    monkeypatch.setattr(resource_probe, "pynvml", fake)
+    monkeypatch.setattr(resource_probe, "_gpu_handle", lambda: object())
+
+    ctx = gpu_context()
+
+    assert ctx["gpu_mem_used_mb"] == 66_000
+    assert "(4242)=61000" in ctx["gpu_procs"]
+    assert "4243" not in ctx["gpu_procs"]
+
+
+def test_gpu_context_is_empty_without_gpu(monkeypatch):
+    monkeypatch.setattr(resource_probe, "_gpu_handle", lambda: None)
+    assert gpu_context() == {}

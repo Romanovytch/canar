@@ -46,12 +46,11 @@ class PipelineOutput:
     generation_latency_s: float | None = None    # time spent generating the answer
     # Optional resource cost (only set when the resource flag is on; see
     # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
-    retrieval_cpu_s: float | None = None
-    retrieval_peak_rss_mb: float | None = None
-    generation_cpu_s: float | None = None
-    generation_peak_rss_mb: float | None = None
-    gpu_util_pct: float | None = None
-    gpu_mem_mb: float | None = None
+    # Per-strategy resource metrics only (#53): the signals that actually differ
+    # between retrieval strategies. GPU is not here — it is run-level context
+    # (same LLM for every strategy); see resource_probe.gpu_context().
+    retrieval_cpu_s: float | None = None   # real in-process CPU of the method
+    peak_rss_mb: float | None = None       # peak benchmark-process memory (turn)
 
 
 # Per-question performance measurements carried on PipelineOutput. Each becomes a
@@ -61,11 +60,7 @@ PERF_FIELDS = (
     "retrieval_latency_s",
     "generation_latency_s",
     "retrieval_cpu_s",
-    "retrieval_peak_rss_mb",
-    "generation_cpu_s",
-    "generation_peak_rss_mb",
-    "gpu_util_pct",
-    "gpu_mem_mb",
+    "peak_rss_mb",
 )
 
 
