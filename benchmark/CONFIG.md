@@ -75,6 +75,14 @@ strategies. These are the ones in `comparison.csv`:
 | `retrieval_latency_s` / `generation_latency_s` | wall-clock time of each phase | — |
 | `retrieval_cpu_s` | CPU seconds of the **benchmark process** during retrieval (real method cost, e.g. BM25) | the LLM server's CPU |
 | `peak_rss_mb` | peak memory of the **benchmark process** in the turn | the LLM server's memory |
+| `input_tokens` / `output_tokens` / `total_tokens` | tokens in the prompt / answer / both — differ per strategy because the retrieved context size differs | — |
+
+Per profile, `comparison.csv` also carries the avg / min / max / total for each
+token field (e.g. `input_tokens_avg`, `input_tokens_max`, `total_tokens_total`).
+Tokens are counted with the configured model's tokenizer when available, else
+`tiktoken`, else a char heuristic; which one was used is recorded as
+`token_tokenizer` in `run_context.txt`. To get exact counts, install
+`transformers` and set `BENCH_TOKENIZER=<hf-model-name>`.
 
 **Run-level context** — written once per run to `run_context.txt` (not compared
 per strategy). GPU work all happens in the LLM server, which is the same model
@@ -85,6 +93,7 @@ for every strategy, so GPU usage describes the setup, not the method:
 | `gpu` / `cpu_cores` / `ram_gb` | the machine (also stamped on every row) |
 | `gpu_mem_used_mb` | device GPU memory in use once the model is loaded |
 | `gpu_procs` | who holds it: `name(pid)=MB` (e.g. the ollama runner) |
+| `token_tokenizer` | which tokenizer produced the token counts (`tiktoken` / `transformers:<model>` / `heuristic`) |
 
 Why GPU is not per-strategy: retrieval never touches the GPU in this setup
 (embeddings go out over HTTP); the GPU is busy only during generation, and that
