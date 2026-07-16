@@ -57,22 +57,27 @@ sys.path.insert(0, str(REPO_ROOT))
 # Make the shared benchmark harness importable.
 sys.path.insert(0, str(BENCH_DIR / "harness"))
 
+from bench_cli import parse_eval_args  # noqa: E402
+
+ARGS = parse_eval_args(default_config=BENCH_DIR / "config.yaml")
+
 # CanaR's AppConfig finds its .env by walking up from the *current working
 # directory*. Running from benchmark/ it would pick up benchmark/.env
 # (no QDRANT_COLLECTIONS) instead of canar/.env. Pre-loading the app's .env
 # explicitly makes the benchmark independent of where it's launched from.
 from dotenv import load_dotenv  # noqa: E402
 
-load_dotenv(REPO_ROOT / ".env", override=True)
+load_dotenv(REPO_ROOT / ".env", override=False)
 
 # CanaR's real modules — the exact code the Streamlit app runs.
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
 from bench_config import load_config  # noqa: E402
+
 # APOSTROPHE NORMALIZATION WORKAROUND: remove this import and unwrap
 # `judge_embeddings` below to restore direct RAGAS OpenAIEmbeddings usage.
 from embedding_normalization import NormalizingEmbeddings  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
-from resource_probe import hardware_profile, probe,  gpu_context  # noqa: E402
+from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
 
 from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
@@ -88,7 +93,8 @@ from canar.app.retrieval.service import RetrievalService  # noqa: E402
 cfg = AppConfig()
 cfg.validate()
 
-BENCH = load_config(BENCH_DIR / "config.yaml")
+BENCH = load_config(ARGS.config)
+RETRIEVAL_K = ARGS.retrieval_k
 
 DATASET = DatasetSpec(
     path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
@@ -129,6 +135,8 @@ def _git_commit() -> str:
 # (which embedding model, which collection, which judge, which code). This is
 # what makes results comparable across machines despite per-developer configs.
 PROVENANCE = {
+    "benchmark_config": str(ARGS.config),
+    "retrieval_k": RETRIEVAL_K if RETRIEVAL_K is not None else "all_retrieved",
     "embed_model": cfg.embed_model,
     "collection": ",".join(cfg.qdrant_collections),
     "judge_model": JUDGE_MODEL,
@@ -396,6 +404,7 @@ def main() -> None:
             # local judge is slow: give each job room, and run a few in parallel
             # (Ollama serves them sequentially but overlaps prompt processing).
             run_config=RunConfig(timeout=900, max_workers=3),
+            retrieval_k=RETRIEVAL_K,
             # profile name + provenance: tagged onto every row and kept out of the
             # score means, so each CSV records what produced it.
             tag={"profile": spec.name, **PROVENANCE},
