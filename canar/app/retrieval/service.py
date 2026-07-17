@@ -65,14 +65,14 @@ class RetrievalService:
             profile = profiles.get(profile_name)
             if profile is None:
                 continue
-            params = profile.rerank_params()
+            params = profile.rerank
             if params is None:
                 continue
-            cache_key = (params.reranker_name, params.device, params.max_length)
+            cache_key = (params.model, params.device, params.max_length)
             reranker = reranker_cache.get(cache_key)
             if reranker is None:
                 reranker = build_reranker(
-                    params.reranker_name,
+                    params.model,
                     device=params.device,
                     max_length=params.max_length,
                 )
@@ -86,14 +86,21 @@ class RetrievalService:
                 profile,
                 name=f"{profile.name}:dense",
                 strategy="simple_vector",
-                dense=profile.dense_params(),
-                vector_name=cfg.qdrant_dense_vector_name or None,
+                dense=profile.dense,
+                sparse=None,
+                fusion=None,
+                rerank=None,
+                parent_child=None,
             )
             hybrid_sparse_profile = replace(
                 profile,
                 name=f"{profile.name}:sparse",
                 strategy="simple_sparse",
-                sparse=profile.sparse_params(),
+                dense=None,
+                sparse=profile.sparse,
+                fusion=None,
+                rerank=None,
+                parent_child=None,
             )
             return HybridStrategy(
                 profile,
@@ -149,7 +156,7 @@ class RetrievalService:
                 )
             sparse_vector = self.sparse_embed_client.embed_query(query)
 
-        rerank_params = profile.rerank_params()
+        rerank_params = profile.rerank
         should_rerank = rerank_params is not None
         retrieval_query = RetrievalQuery(
             text=query,
@@ -166,7 +173,7 @@ class RetrievalService:
             return reranker.rerank(
                 query=query,
                 candidates=hits,
-                top_k=rerank_params.output_top_k,
+                top_k=rerank_params.final_top_k,
             )
         return hits
 
@@ -181,5 +188,4 @@ class RetrievalService:
         expander = self.hit_expanders.get("parent_child")
         if expander is None:
             raise ValueError("Unsupported retrieval hit expansion: 'parent_child'")
-        return expander.expand(hits, profile.parent_child_params())
-
+        return expander.expand(hits, profile.parent_child)

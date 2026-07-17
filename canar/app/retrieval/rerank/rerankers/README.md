@@ -37,8 +37,8 @@ in `profiles.py` with `RerankRetrievalParams`:
 
 ```python
 rerank=RerankRetrievalParams(
-    output_top_k=5,
-    reranker_name="bge-v2-m3",
+    final_top_k=5,
+    model="bge-v2-m3",
     device="auto",
     max_length=8192,
 )
@@ -51,9 +51,9 @@ The reranker wrapper is built only when a profile has enabled rerank params. Mod
 weights are still lazy-loaded only on the first reranked query, so startup does
 not download or load the Hugging Face model.
 
-`rerank.output_top_k` controls how many reranked hits are returned. The number of
+`rerank.final_top_k` controls how many reranked hits are returned. The number of
 hybrid candidates sent into the reranker is the selected rerank profile's
-`fusion.output_top_k`.
+`fusion.candidate_top_k`.
 
 ## Deployment Notes
 

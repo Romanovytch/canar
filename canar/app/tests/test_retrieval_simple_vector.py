@@ -31,8 +31,9 @@ def test_simple_vector_normalizes_sorts_and_prunes_hits():
         name="simple_vector",
         strategy="simple_vector",
         collections=("docs_a", "docs_b"),
-        score_threshold=0.35,
-        dense=DenseRetrievalParams(fetch_top_k=5, min_score=0.35),
+        fetch_top_k=5,
+        min_score=0.35,
+        dense=DenseRetrievalParams(),
         source_filter="utilitr",
         fallback_top_k=3,
     )
@@ -61,12 +62,15 @@ def test_simple_vector_normalizes_sorts_and_prunes_hits():
     ]
 
 
-def test_simple_vector_uses_dense_params_for_top_k_threshold_and_max_kept():
+def test_simple_vector_dense_params_override_profile_fetch_and_threshold():
     profile = RetrievalProfile(
         name="hybrid_dense",
         strategy="simple_vector",
         collections=("docs",),
-        dense=DenseRetrievalParams(fetch_top_k=4, min_score=0.25, max_kept=2),
+        fetch_top_k=10,
+        min_score=0.75,
+        max_results=2,
+        dense=DenseRetrievalParams(fetch_top_k=4, min_score=0.25),
     )
     adapter = FakeDenseAdapter(
         {
@@ -84,7 +88,7 @@ def test_simple_vector_uses_dense_params_for_top_k_threshold_and_max_kept():
     )
 
     assert [hit.text for hit in hits] == ["top", "second"]
-    assert adapter.calls == [("docs", [0.1], 4, "utilitr", None)]
+    assert adapter.calls == [("docs", [0.1], 4, None, None)]
 
 
 def test_simple_vector_keeps_top_fallback_when_all_hits_are_below_threshold():
@@ -92,17 +96,18 @@ def test_simple_vector_keeps_top_fallback_when_all_hits_are_below_threshold():
         name="simple_vector",
         strategy="simple_vector",
         collections=("docs",),
-        score_threshold=2.0,
-        dense=DenseRetrievalParams(fetch_top_k=5, min_score=2.0),
+        fetch_top_k=5,
+        min_score=0.75,
+        dense=DenseRetrievalParams(),
         source_filter="utilitr",
         fallback_top_k=3,
     )
     adapter = FakeDenseAdapter(
         {
             "docs": [
-                RetrievalHit(text="one", collection="docs", score=4.0, score_norm=0),
-                RetrievalHit(text="two", collection="docs", score=3.0, score_norm=0),
-                RetrievalHit(text="three", collection="docs", score=2.0, score_norm=0),
+                RetrievalHit(text="one", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="two", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="three", collection="docs", score=1.0, score_norm=0),
                 RetrievalHit(text="four", collection="docs", score=1.0, score_norm=0),
             ]
         }
@@ -120,6 +125,7 @@ def test_simple_vector_requires_dense_vector():
         name="simple_vector",
         strategy="simple_vector",
         collections=("docs",),
+        dense=DenseRetrievalParams(),
     )
     strategy = SimpleVectorStrategy(profile, FakeDenseAdapter({}))
 

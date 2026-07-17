@@ -4,7 +4,6 @@ from canar.app.retrieval.expanders.parent_child import ParentChildExpander
 from canar.app.retrieval.models import (
     ParentChildRetrievalParams,
     RetrievalHit,
-    RetrievalProfile,
 )
 
 
@@ -86,30 +85,3 @@ def test_parent_child_expander_uses_structured_parent_collection_suffix():
 
     assert adapter.collection_checks == ["children_a_parents"]
     assert adapter.parent_fetches == [("children_a_parents", ["parent-1"])]
-
-
-def test_parent_child_legacy_suffix_resolves_for_backward_compatibility():
-    profile = RetrievalProfile(
-        name="legacy_parent_child",
-        strategy="simple_vector",
-        collections=("children_a",),
-        parent_collection_suffix="_parents",
-    )
-
-    assert profile.parent_child_params() == ParentChildRetrievalParams(
-        parent_collection_suffix="_parents",
-    )
-
-
-def test_parent_child_structured_params_win_over_legacy_suffix():
-    profile = RetrievalProfile(
-        name="parent_child",
-        strategy="simple_vector",
-        collections=("children_a",),
-        parent_child=ParentChildRetrievalParams(parent_collection_suffix="_structured"),
-        parent_collection_suffix="_legacy",
-    )
-
-    assert profile.parent_child_params() == ParentChildRetrievalParams(
-        parent_collection_suffix="_structured",
-    )

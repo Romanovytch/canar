@@ -38,16 +38,15 @@ Behavior:
 - Searches every collection defined by the `RetrievalProfile`.
 - Normalizes scores within each collection.
 - Sorts hits by normalized score, then raw score.
-- Filters hits using `score_threshold`.
+- Filters hits using the profile root `min_score`.
 - Keeps `fallback_top_k` results if every hit is below the threshold.
 
 ## Current Limitations
 
-Only `simple_vector` is implemented at the moment.
+Dense, sparse, and hybrid strategies are implemented.
 
 `RetrievalService` currently embeds the query before calling the strategy. This works
-for `simple_vector`, but may need to evolve for future strategies such as hybrid
-search, sparse retrieval, metadata-only retrieval, or reranking.
+The service creates the dense and/or sparse embeddings required by the selected profile.
 
 ## Adding a Strategy
 

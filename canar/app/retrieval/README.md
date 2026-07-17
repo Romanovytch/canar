@@ -31,14 +31,15 @@ User query
 Profiles are currently built in Python by `build_retrieval_profiles(...)`; there is no
 external YAML configuration for retrieval profiles.
 
-The first profile is `simple_vector`. Its configurable fields include:
+Common retrieval behavior is configured at the profile root:
 
 - `collections`
-- `dense.fetch_top_k` / `sparse.fetch_top_k`
-- `score_threshold`
+- `fetch_top_k`
+- `min_score`
 - `source_filter`
 - `fallback_top_k`
-- `vector_name`
+- `max_results`
+- `dense.vector_name` / `sparse.vector_name`
 
 Hybrid profiles can tune dense retrieval, sparse retrieval, and fusion separately:
 
@@ -47,23 +48,22 @@ RetrievalProfile(
     name="hybrid",
     strategy="hybrid",
     collections=collections,
-    dense=DenseRetrievalParams(fetch_top_k=30, min_score=0.72, max_kept=10),
-    sparse=SparseRetrievalParams(
-        fetch_top_k=30,
-        min_score_ratio=0.10,
-        gap_ratio=0.20,
-        max_kept=8,
-    ),
+    fetch_top_k=30,
+    min_score=0.72,
+    max_results=10,
+    dense=DenseRetrievalParams(vector_name="text-dense"),
+    sparse=SparseRetrievalParams(vector_name="text-sparse"),
     fusion=FusionRetrievalParams(
         method="weighted_rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.2},
-        output_top_k=8,
+        candidate_top_k=8,
     ),
 )
 ```
 
-Use the structured dense, sparse, fusion, and rerank parameter blocks directly.
+Dense and sparse blocks only contain retriever-specific options. Fusion uses
+`candidate_top_k`, while reranking uses `final_top_k`.
 
 Parent-child profiles use the same dense/sparse/fusion blocks for child retrieval and a
 small parent-child block for parent lookup behavior:
@@ -73,12 +73,10 @@ RetrievalProfile(
     name="parent_child_vector",
     strategy="parent_child_vector",
     collections=collections,
-    dense=DenseRetrievalParams(fetch_top_k=5, min_score=0.35),
+    dense=DenseRetrievalParams(vector_name="text-dense"),
     parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
 )
 ```
-
-The legacy flat `parent_collection_suffix` field is still resolved for compatibility.
 
 Agent-to-profile mapping is defined in `AGENT_RETRIEVAL_PROFILES`.
 

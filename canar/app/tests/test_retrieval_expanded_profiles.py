@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from canar.app.retrieval.models import (
     DenseRetrievalParams,
     FusionRetrievalParams,
@@ -10,113 +12,60 @@ from canar.app.retrieval.models import (
 from canar.app.retrieval.profiles import AGENT_RETRIEVAL_PROFILES, build_retrieval_profiles
 
 
-def test_expanded_profiles_are_registered_without_changing_agent_mapping():
+def test_profiles_inherit_root_defaults_and_keep_option_specific_parameters():
     profiles = build_retrieval_profiles(
         ("children_a", "children_b"),
         dense_vector_name="text-dense",
         sparse_vector_name="text-sparse",
     )
 
-    vector_parent_child = profiles["simple_vector_parent_child"]
-    sparse_parent_child = profiles["simple_sparse_parent_child"]
-    hybrid_parent_child = profiles["hybrid_parent_child"]
-    hybrid_parent_child_rerank_bge = profiles["hybrid_parent_child_rerank_bge"]
-
-    assert vector_parent_child.strategy == "simple_vector"
-    assert vector_parent_child.collections == ("children_a", "children_b")
-    assert vector_parent_child.vector_name == "text-dense"
-    assert vector_parent_child.dense == DenseRetrievalParams(
-        fetch_top_k=5,
-        min_score=0.35,
-        max_kept=None,
-    )
-    assert vector_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
-    )
-
-    assert sparse_parent_child.strategy == "simple_sparse"
-    assert sparse_parent_child.vector_name == "text-sparse"
-    assert sparse_parent_child.sparse == SparseRetrievalParams(
-        fetch_top_k=5,
-        min_score_ratio=0.35,
-        gap_ratio=None,
-        max_kept=None,
-    )
-    assert sparse_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
-    )
-
-    assert hybrid_parent_child.strategy == "hybrid"
-    assert hybrid_parent_child.collections == ("children_a", "children_b")
-    assert hybrid_parent_child.vector_name == "text-sparse"
-    assert hybrid_parent_child.dense == DenseRetrievalParams(
-        fetch_top_k=10,
-        min_score=0.35,
-        max_kept=None,
-    )
-    assert hybrid_parent_child.sparse == SparseRetrievalParams(
-        fetch_top_k=10,
-        min_score_ratio=0.35,
-        gap_ratio=None,
-        max_kept=None,
-    )
-    assert hybrid_parent_child.fusion == FusionRetrievalParams(
-        method="rrf",
-        rrf_k=60,
-        weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=5,
-    )
-    assert hybrid_parent_child.rerank is None
-    assert hybrid_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
-    )
-
-    assert hybrid_parent_child_rerank_bge.strategy == "hybrid"
-    assert hybrid_parent_child_rerank_bge.dense == DenseRetrievalParams(
-        fetch_top_k=20,
-        min_score=0.35,
-        max_kept=None,
-    )
-    assert hybrid_parent_child_rerank_bge.sparse == SparseRetrievalParams(
-        fetch_top_k=20,
-        min_score_ratio=0.35,
-        gap_ratio=None,
-        max_kept=None,
-    )
-    assert hybrid_parent_child_rerank_bge.fusion == FusionRetrievalParams(
-        method="rrf",
-        rrf_k=60,
-        weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=20,
-    )
-    assert hybrid_parent_child_rerank_bge.rerank == RerankRetrievalParams(output_top_k=5)
-    assert hybrid_parent_child_rerank_bge.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
-    )
-    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "hybrid_rerank_bge"
-
-
-def test_hybrid_rerank_bge_profile_is_registered_separately():
-    profiles = build_retrieval_profiles(
-        ("children_a", "children_b"),
-        dense_vector_name="text-dense",
-        sparse_vector_name="text-sparse",
-    )
-
+    vector = profiles["simple_vector"]
+    sparse = profiles["simple_sparse"]
     hybrid = profiles["hybrid"]
-    hybrid_rerank_bge = profiles["hybrid_rerank_bge"]
 
-    assert hybrid.rerank is None
-    assert hybrid.fusion == FusionRetrievalParams(
-        method="rrf",
-        rrf_k=60,
-        weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=5,
+    assert (vector.fetch_top_k, vector.min_score, vector.fallback_top_k) == (10, 0.75, 3)
+    assert vector.source_filter is None
+    assert vector.dense == DenseRetrievalParams(vector_name="text-dense")
+    assert sparse.sparse == SparseRetrievalParams(vector_name="text-sparse")
+    assert hybrid.dense == vector.dense
+    assert hybrid.sparse == sparse.sparse
+    assert hybrid.fusion == FusionRetrievalParams(candidate_top_k=5)
+
+
+def test_parent_child_profiles_are_derived_from_canonical_profiles():
+    profiles = build_retrieval_profiles(("children",))
+
+    assert profiles["simple_vector_parent_child"] == replace(
+        profiles["simple_vector"],
+        name="simple_vector_parent_child",
+        parent_child=ParentChildRetrievalParams(),
     )
-    assert hybrid_rerank_bge.rerank == RerankRetrievalParams(output_top_k=5)
-    assert hybrid_rerank_bge.fusion == FusionRetrievalParams(
-        method="rrf",
-        rrf_k=60,
-        weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=20,
+    assert profiles["hybrid_parent_child"] == replace(
+        profiles["hybrid"],
+        name="hybrid_parent_child",
+        parent_child=ParentChildRetrievalParams(),
     )
+
+
+def test_reranker_variants_only_change_model_and_parent_option():
+    profiles = build_retrieval_profiles(("children",))
+    bge = profiles["hybrid_rerank_bge"]
+    qwen = profiles["hybrid_rerank_qwen_4b"]
+    parent_qwen = profiles["hybrid_parent_child_rerank_qwen_4b"]
+
+    assert bge.fetch_top_k == 20
+    assert bge.fusion == FusionRetrievalParams(candidate_top_k=20)
+    assert bge.rerank == RerankRetrievalParams(model="bge-v2-m3")
+    assert qwen == replace(
+        bge, name="hybrid_rerank_qwen_4b", rerank=RerankRetrievalParams(model="qwen-4b")
+    )
+    assert parent_qwen == replace(
+        qwen,
+        name="hybrid_parent_child_rerank_qwen_4b",
+        parent_child=ParentChildRetrievalParams(),
+    )
+
+
+def test_agent_mapping_preserves_architecture_default():
+    assert AGENT_RETRIEVAL_PROFILES["r_helpdesk"] == "simple_vector"
+    assert AGENT_RETRIEVAL_PROFILES["sas_to_r"] is None
