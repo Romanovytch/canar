@@ -18,14 +18,12 @@ environment:                 # expected env; preflight aborts if canar/.env diff
   collection: utilitr_v1
 
 profiles:                    # retrieval strategies to compare
-  - name: product_default
-    strategy: simple_vector
+  - name: simple_vector
     top_k: 5
     score_threshold: 0.35
     source_filter: utilitr
     fallback_top_k: 3
-  - name: wider_topk
-    strategy: simple_vector
+  - name: simple_vector_parent_child
     top_k: 10
     score_threshold: 0.20
 ```
@@ -39,10 +37,10 @@ profiles:                    # retrieval strategies to compare
   retrieved context).
 - When there's more than one profile, a **comparison table** of mean scores is
   printed at the end.
-- Each profile's fields mirror CanaR's `RetrievalProfile`
-  (`canar/app/retrieval/`). The benchmark builds the product's real strategy
-  with those values — so `product_default` measures the product as it ships,
-  and the others are experiments to compare against it.
+- Each profile name must match a CanaR `RetrievalProfile` from
+  `canar/app/retrieval/profiles.py`. The benchmark runs the product's real
+  profile, so `simple_vector` measures the exact profile the service knows by
+  that name.
 
 ## The `environment` block
 

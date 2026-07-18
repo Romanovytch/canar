@@ -168,20 +168,58 @@ profiles = build_retrieval_profiles(
 )
 
 
-def product_profile_name(spec) -> str:
-    """Map a benchmark row to the product RetrievalProfile it measures."""
-    if spec.name in profiles:
-        return spec.name
-    if spec.strategy in profiles:
-        return spec.strategy
+def resolve_profile(spec):
+    """Return the product RetrievalProfile named by a benchmark row."""
+    profile = profiles.get(spec.name)
+    if profile is not None:
+        return profile
     sys.exit(
-        f"Profile {spec.name!r} / strategy {spec.strategy!r} not available in "
-        f"RetrievalService profiles (have: {list(profiles)})."
+        f"Benchmark profile {spec.name!r} not available in RetrievalService profiles "
+        f"(have: {list(profiles)})."
     )
 
 
+DENSE_PROFILE_NAMES = {
+    "simple_vector",
+    "simple_vector_parent_child",
+    "hybrid",
+    "hybrid_rerank_bge",
+    "hybrid_rerank_qwen_0.6b",
+    "hybrid_rerank_qwen_4b",
+    "hybrid_rerank_qwen_8b",
+    "hybrid_parent_child",
+    "hybrid_parent_child_rerank_bge",
+    "hybrid_parent_child_rerank_qwen_0.6b",
+    "hybrid_parent_child_rerank_qwen_4b",
+    "hybrid_parent_child_rerank_qwen_8b",
+}
+
+SPARSE_PROFILE_NAMES = {
+    "simple_sparse",
+    "simple_sparse_parent_child",
+    "hybrid",
+    "hybrid_rerank_bge",
+    "hybrid_rerank_qwen_0.6b",
+    "hybrid_rerank_qwen_4b",
+    "hybrid_rerank_qwen_8b",
+    "hybrid_parent_child",
+    "hybrid_parent_child_rerank_bge",
+    "hybrid_parent_child_rerank_qwen_0.6b",
+    "hybrid_parent_child_rerank_qwen_4b",
+    "hybrid_parent_child_rerank_qwen_8b",
+}
+
+
+def profile_needs_dense(profile) -> bool:
+    return profile.name in DENSE_PROFILE_NAMES
+
+
+def profile_needs_sparse(profile) -> bool:
+    return profile.name in SPARSE_PROFILE_NAMES
+
+
 BENCH_AGENT_PROFILES = {
-    f"benchmark:{spec.name}": product_profile_name(spec)
+    f"benchmark:{spec.name}": spec.name
     for spec in BENCH.profiles
 }
 
@@ -244,9 +282,9 @@ def preflight() -> None:
     """Fail fast with a clear message if the AgoRa collection isn't ready."""
     check_environment()
     # Validate only the vectors the active product profiles actually query.
-    strategies = {profiles[product_profile_name(p)].strategy for p in BENCH.profiles}
-    needs_dense = bool(strategies & {"simple_vector", "hybrid"})
-    needs_sparse = bool(strategies & {"simple_sparse", "hybrid"})
+    active_profiles = [resolve_profile(p) for p in BENCH.profiles]
+    needs_dense = any(profile_needs_dense(profile) for profile in active_profiles)
+    needs_sparse = any(profile_needs_sparse(profile) for profile in active_profiles)
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
                           check_compatibility=False)
     for col in cfg.qdrant_collections:
@@ -311,16 +349,19 @@ def build_searcher(spec):
     behavior such as reranking: `hybrid_rerank_bge` uses the hybrid strategy first,
     then `RetrievalService.search` applies the configured reranker.
     """
-    profile_name = product_profile_name(spec)
-    profile = service.profiles[profile_name]
-    strategy = service.strategies.get(profile.name) or service.strategies.get(profile.strategy)
-    if strategy is None:
+    profile_name = spec.name
+    profile = service.profiles.get(profile_name)
+    if profile is None:
         sys.exit(
-            f"Profile {profile_name!r} uses strategy {profile.strategy!r}, but no strategy "
-            f"is available in RetrievalService (have: {list(service.strategies)})."
+            f"Benchmark profile {profile_name!r} not available in RetrievalService profiles "
+            f"(have: {list(service.profiles)})."
         )
+    strategy = service.strategies.get(profile.name)
+    if strategy is None:
+        sys.exit(f"Profile {profile_name!r} is not available in RetrievalService strategies "
+                 f"(have: {list(service.strategies)}).")
 
-    needs_sparse = profile.strategy in {"simple_sparse", "hybrid", "parent_child_hybrid"}
+    needs_sparse = profile_needs_sparse(profile)
     if needs_sparse and sparse_embed is None:
         sys.exit(
             f"Profile {profile_name!r} uses {profile.strategy!r} but FASTEMBED_SPARSE_MODEL "

@@ -3,14 +3,10 @@
 # `run`         — how the benchmark runs (dataset, judge, generation budget).
 # `environment` — the embed model + collection a run is meant to use; preflight
 #                 aborts if canar/.env differs, so results stay comparable.
-# `profiles`    — which product retrieval strategies to compare. Each profile
-#                 names a strategy that RetrievalService already builds from
-#                 canar/.env (simple_vector, simple_sparse, hybrid); the
-#                 benchmark runs the dataset once per profile and tags every row
-#                 with the profile name, so the strategies can be compared
-#                 side by side. The strategy's settings (top_k, fusion, ...) come
-#                 from the product's profiles.py — the benchmark measures the
-#                 real strategy, not an override.
+# `profiles`    - which product retrieval profiles to compare. Each name must
+#                 match a RetrievalProfile from canar/app/retrieval/profiles.py.
+#                 The benchmark runs the dataset once per profile and tags every
+#                 row with that same product profile name.
 #
 # Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS,
 # MEASURE_RESOURCES.
@@ -31,49 +27,34 @@ environment:
   collection: dico       # multi-vector collection (dense + sparse), built by AgoRa
 
 profiles:
-  # The three retrieval strategies, compared side by side. Each names a strategy
-  # RetrievalService built from canar/.env; settings live in the product's
-  # profiles.py. sparse and hybrid need FASTEMBED_SPARSE_MODEL set and the
-  # collection ingested with sparse vectors.
+  # Product RetrievalProfile names, compared side by side. Settings live in the
+  # product's profiles.py. sparse and hybrid profiles need FASTEMBED_SPARSE_MODEL
+  # set and the collection ingested with sparse vectors.
  
  - name: simple_vector
-   strategy: simple_vector
 
  - name: simple_vector_parent_child
-   strategy: simple_vector
 
  - name: simple_sparse
-   strategy: simple_sparse
 
  - name: simple_sparse_parent_child
-   strategy: simple_sparse
 
  - name: hybrid
-   strategy: hybrid
 
  - name: hybrid_rerank_bge
-   strategy: hybrid
 
  - name: hybrid_rerank_qwen_0.6b
-   strategy: hybrid
 
  - name: hybrid_rerank_qwen_4b
-   strategy: hybrid
 
  #- name: hybrid_rerank_qwen_8b
- #  strategy: hybrid
 
  - name: hybrid_parent_child
-   strategy: hybrid
 
  - name: hybrid_parent_child_rerank_bge
-   strategy: hybrid
 
  - name: hybrid_parent_child_rerank_qwen_0.6b
-   strategy: hybrid
 
  - name: hybrid_parent_child_rerank_qwen_4b
-   strategy: hybrid
 
  #- name: hybrid_parent_child_rerank_qwen_8b
-  # strategy: hybrid
