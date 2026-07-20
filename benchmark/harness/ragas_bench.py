@@ -41,8 +41,9 @@ class PipelineOutput:
     answer: str
     contexts: list[str]                 # retrieved chunk texts (RAGAS context)
     paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
-    retrieval_latency_s: float | None = None         # time spent retrieving
-    generation_latency_s: float | None = None        # time spent generating the answer
+    error: str | None = None                     # pipeline failure, if this question crashed
+    retrieval_latency_s: float | None = None     # time spent retrieving
+    generation_latency_s: float | None = None    # time spent generating the answer
     # Optional resource cost (only set when the resource flag is on; see
     # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
     # Per-strategy resource metrics only (#53): the signals that actually differ
@@ -61,6 +62,19 @@ PERF_FIELDS = (
     "retrieval_cpu_s",
     "peak_rss_mb",
 )
+
+
+def _pipeline_error_message(exc: Exception) -> str:
+    """Make runtime failures obvious in terminal output and metrics files."""
+    raw = f"{type(exc).__name__}: {exc}"
+    lowered = raw.lower()
+    if "outofmemoryerror" in lowered or "out of memory" in lowered:
+        return f"GPU_OUT_OF_MEMORY: {raw}"
+    return raw
+
+
+ERROR_METRIC = "ERROR"
+PIPELINE_ERROR_ANSWER = "[PIPELINE_ERROR]"
 
 
 @dataclass
@@ -88,13 +102,21 @@ def _write_answers_md(path, df, title, tag, score_cols, source_col) -> None:
     for i, row in df.iterrows():
         lines += [f"## Q{i + 1}. {row['user_input']}", ""]
 
-        scores = " · ".join(
-            f"{c}={row[c]:.2f}"
-            for c in score_cols
-            if c in df.columns and pd.notna(row[c])
-        )
+        score_parts = []
+        for c in score_cols:
+            if c not in df.columns or pd.isna(row[c]):
+                continue
+            value = row[c]
+            if isinstance(value, (int, float)):
+                score_parts.append(f"{c}={value:.2f}")
+            else:
+                score_parts.append(f"{c}={value}")
+        scores = " · ".join(score_parts)
         if scores:
             lines += [f"`{scores}`", ""]
+
+        if row.get("pipeline_status") == "ERROR":
+            lines += ["**Pipeline error**", "", str(row.get("pipeline_error", "")), ""]
 
         answer = str(row.get("response", "")).strip()
         lines += ["**Answer**", "", answer or "_(empty)_", ""]
@@ -158,29 +180,43 @@ def run_benchmark(
     print(f"{name}: {len(items)} questions\n")
 
     samples, retr_rows, all_paths = [], [], []
+    pipeline_statuses, pipeline_errors = [], []
     metadatas = []                       # per-question extras (rich YAML datasets)
-    perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question resource values
+    perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
+    metric_names = tuple(retrieval_metrics.compute([], "").keys())
     for item in items:
         question = item.query
         print(f"Q: {question}")
         try:
             out = pipeline(question)
-        except Exception as e:  # one bad question shouldn't kill the whole run
-            print(f"   [pipeline failed: {e}]")
-            out = PipelineOutput("", [], [])
+        except Exception as e:  # keep the run going, but make the failure impossible to miss
+            error = _pipeline_error_message(e)
+            print(f"   [PIPELINE_ERROR: {error}]")
+            out = PipelineOutput(PIPELINE_ERROR_ANSWER, [], [], error=error)
+
+        failed = out.error is not None
+        pipeline_statuses.append("ERROR" if failed else "OK")
+        pipeline_errors.append(out.error or "")
 
         metadatas.append(item.metadata)
         for perf_field in PERF_FIELDS:
             perf[perf_field].append(getattr(out, perf_field))
         if track_hits:
             # deterministic retrieval metrics (Hit Rate@k, MRR, Recall@k, ...)
-            m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
-            retr_rows.append(m)
-            all_paths.append("; ".join(out.paths))
-            print(f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
-                  f"recall={m['recall']:.2f} | A: {out.answer[:60]}...\n")
+            if failed:
+                m = {metric_name: ERROR_METRIC for metric_name in metric_names}
+                retr_rows.append(m)
+                all_paths.append("PIPELINE_ERROR")
+                print(f"   retrieval=ERROR | A: {out.answer}\n")
+            else:
+                m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
+                retr_rows.append(m)
+                all_paths.append("; ".join(out.paths))
+                print(f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
+                      f"recall={m['recall']:.2f} | A: {out.answer[:60]}...\n")
         else:
-            print(f"   A: {out.answer[:80]}...\n")
+            status = "ERROR" if failed else "OK"
+            print(f"   status={status} | A: {out.answer[:80]}...\n")
 
         samples.append(SingleTurnSample(
             user_input=question,
@@ -190,9 +226,14 @@ def run_benchmark(
         ))
 
     if track_hits and retr_rows:
-        hit_rate = sum(r["hit_rate"] for r in retr_rows) / len(retr_rows)
-        mrr = sum(r["mrr"] for r in retr_rows) / len(retr_rows)
-        print(f"Retrieval — Hit Rate@k: {hit_rate:.0%} | MRR: {mrr:.3f}\n")
+        ok_rows = [r for r, status in zip(retr_rows, pipeline_statuses) if status == "OK"]
+        if ok_rows:
+            hit_rate = sum(r["hit_rate"] for r in ok_rows) / len(ok_rows)
+            mrr = sum(r["mrr"] for r in ok_rows) / len(ok_rows)
+            print(f"Retrieval — Hit Rate@k: {hit_rate:.0%} | MRR: {mrr:.3f}\n")
+        failed = len(retr_rows) - len(ok_rows)
+        if failed:
+            print(f"Retrieval — {failed} question(s) failed with PIPELINE_ERROR\n")
 
     print("Running RAGAS evaluation (slow on a local judge) ...\n")
     results = evaluate(
@@ -205,6 +246,9 @@ def run_benchmark(
 
     out_df = results.to_pandas()
     meta_cols = {"user_input", "retrieved_contexts", "response", "reference"}
+    out_df["pipeline_status"] = pipeline_statuses
+    out_df["pipeline_error"] = pipeline_errors
+    meta_cols |= {"pipeline_status", "pipeline_error"}
     if tag:  # constant columns (e.g. profile name) — kept out of the score means
         for key, value in tag.items():
             out_df[key] = value
@@ -240,8 +284,15 @@ def run_benchmark(
     meta_cols |= set(meta_keys)
 
     score_cols = [c for c in out_df.columns if c not in meta_cols]
-    print(out_df[["user_input"] + score_cols].to_string(index=False))
-    print(f"\nMean scores:\n{out_df[score_cols].mean(numeric_only=True).to_string()}")
+    error_mask = out_df["pipeline_status"] == "ERROR"
+    if error_mask.any():
+        out_df[score_cols] = out_df[score_cols].astype(object)
+        out_df.loc[error_mask, score_cols] = ERROR_METRIC
+    display_cols = ["user_input", "pipeline_status", "pipeline_error"] + score_cols
+    print(out_df[display_cols].to_string(index=False))
+    numeric_scores = out_df[score_cols].apply(pd.to_numeric, errors="coerce")
+    print("\nMean scores:")
+    print(numeric_scores.mean(numeric_only=True).to_string())
 
     # Output folder, holding the numbers and the text split apart:
     #   metrics.csv  — only the scores (plus a row id and provenance), easy to read/plot
@@ -260,7 +311,11 @@ def run_benchmark(
     tag_cols = list(tag) if tag else []
     extra_cols = [k for k in meta_keys if k not in tag_cols]  # dataset metadata
     metrics_path = out_dir / "metrics.csv"
-    out_df[["user_input"] + tag_cols + extra_cols + score_cols].to_csv(metrics_path, index=False)
+    status_cols = ["pipeline_status", "pipeline_error"]
+    out_df[["user_input"] + tag_cols + extra_cols + status_cols + score_cols].to_csv(
+        metrics_path,
+        index=False,
+    )
 
     answers_path = out_dir / "answers.md"
     _write_answers_md(answers_path, out_df, name, tag, score_cols, dataset.source_col)

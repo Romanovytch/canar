@@ -58,10 +58,21 @@ cd /home/cereq/opt/pedro/canar/benchmark && source .venv/bin/activate
 JUDGE_MODEL=qwen2.5:7b python e2e/eval_e2e.py
 ```
 
+Select a benchmark YAML and retrieval-metric cutoff from the command line. Relative config paths are resolved from the current working directory:
+
+```bash
+QDRANT_COLLECTIONS=dicovar_sum MEASURE_RESOURCES=1 \
+python e2e/eval_e2e.py --config config.dico.yaml --retrieval-k 5
+```
+
+Shell environment variables take precedence over values in `canar/.env`. The `--retrieval-k` option changes only metric computation, not product retrieval or reranker result counts.
+
 Each run lands in a timestamped folder under `e2e/results/` (gitignored):
 `metrics.csv` (the scores) and `answers.md` (question, answer, reference, context).
 
 **Knobs** (env vars / top of `eval_e2e.py`):
+- `--config PATH` (default `config.yaml`) — benchmark run/dataset/profile YAML.
+- `--retrieval-k N` — positive cutoff for retrieval metrics; default: all returned results.
 - `GEN_MAX_TOKENS` (default 8192) — generation cap. The product model
   (`qwen3.5`) is a *reasoning* model: it burns a hidden token budget thinking
   before it answers, so the app's default 2048 returns **empty** answers
