@@ -3,19 +3,20 @@
 The benchmark reads its settings from `config.yaml` so you can adjust a run —
 and **compare retrieval strategies** — without touching code.
 
-It has two sections:
+It has three sections:
 
 ```yaml
 run:                         # how the benchmark runs
-  dataset: datasets/utilitr_questions.csv
+  dataset: datasets/utilitr_questions.csv   # CSV or YAML
   agent: r_helpdesk
   limit: null                # null = all questions; int = quick subset
   judge_model: qwen2.5:7b    # RAGAS judge; null = use the product LLM
   gen_max_tokens: 8192       # generation budget (see note below)
+  measure_resources: false   # true = also measure CPU/memory/GPU per phase
 
 environment:                 # expected env; preflight aborts if canar/.env differs
   embed_model: bge-m3
-  collection: utilitr_v1
+  collection: utilitr_v2     # multi-vector collection (dense + sparse)
 
 profiles:                    # retrieval strategies to compare
   - name: simple_vector
@@ -57,16 +58,36 @@ answer the project's central question: *which retrieval strategy works best for
 which kind of question?* If the product later adopts a YAML profile format, the
 schema is intentionally the same, so a profile can be shared.
 
+## Token usage (always measured)
+
+Every run counts the tokens sent to the LLM and generated back, so strategies can
+be compared on context size and generation cost. Counting is cheap, so it needs
+no flag.
+
+| Column | What it measures |
+|---|---|
+| `input_tokens` | the full prompt: system prompt + retrieved chunks + the question |
+| `output_tokens` | the generated answer |
+| `total_tokens` | input + output |
+
+The question is the same for every strategy — only the retrieved chunks differ —
+so `input_tokens` shows how much context a strategy pushes to the LLM.
+
+Per question these land in `metrics.csv`; per profile, `comparison.csv` carries
+the avg / min / max / total for each (e.g. `input_tokens_avg`, `input_tokens_max`,
+`total_tokens_total`). Tokens are counted with the configured model's tokenizer
+when available, else `tiktoken`, else a char heuristic; which one was used is
+recorded as `token_tokenizer` in `run_context.txt`. For exact counts, install
+`transformers` and set `BENCH_TOKENIZER=<hf-model-name>`.
+
 ## Resource benchmark (optional)
 
 Set `run.measure_resources: true` (or env `MEASURE_RESOURCES=1`) to also measure
-the **resource cost** of each retrieval strategy, not just answer quality. It's
-**off by default** and adds a tiny sampler thread per phase only when on.
-
-Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
+the **resource cost** of each retrieval strategy. It's **off by default** and adds
+a tiny sampler thread per phase only when on.
 
 **Per-strategy columns** — the signals that actually differ between retrieval
-strategies. These are the ones in `comparison.csv`:
+strategies, added to `metrics.csv` and `comparison.csv`:
 
 | Column | What it measures | What it does NOT measure |
 |---|---|---|
@@ -83,6 +104,7 @@ for every strategy, so GPU usage describes the setup, not the method:
 | `gpu` / `cpu_cores` / `ram_gb` | the machine (also stamped on every row) |
 | `gpu_mem_used_mb` | device GPU memory in use once the model is loaded |
 | `gpu_procs` | who holds it: `name(pid)=MB` (e.g. the ollama runner) |
+| `token_tokenizer` | which tokenizer produced the token counts (`tiktoken` / `transformers:<model>` / `heuristic`) |
 
 Why GPU is not per-strategy: retrieval never touches the GPU in this setup
 (embeddings go out over HTTP); the GPU is busy only during generation, and that
@@ -104,8 +126,10 @@ without a GPU the run-context GPU fields are simply absent).
 - `gen_max_tokens`: `qwen3.5` spends a hidden budget "thinking" before it
   answers, so the app's default of 2048 returns empty answers on many
   questions. Keep this high.
-- Env vars override the matching `run` keys: `JUDGE_MODEL`, `GEN_MAX_TOKENS`.
-- `simple_vector` (dense) and `simple_sparse` (BM25) are wired in. A commented
-  `sparse_bm25` profile is ready in `config.yaml` — enable it once the collection
-  is ingested with sparse vectors (see `SPARSE_TODO.md`). Add further strategies
-  to the `STRATEGIES` map in `e2e/eval_e2e.py` as the product gains them.
+- Env vars override the matching `run` keys: `JUDGE_MODEL`, `GEN_MAX_TOKENS`,
+  `MEASURE_RESOURCES`. `BENCH_TOKENIZER` selects the tokenizer for token counts.
+- `dense` (simple_vector), `sparse` (simple_sparse / BM25) and `hybrid` are all
+  wired in. `sparse` and `hybrid` need `FASTEMBED_SPARSE_MODEL` set in
+  `canar/.env` and a collection ingested with sparse vectors (see `SETUP.md`).
+- A profile can name any strategy `RetrievalService` builds, so new product
+  strategies become available here without changing the benchmark.

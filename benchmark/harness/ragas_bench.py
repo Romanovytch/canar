@@ -51,6 +51,11 @@ class PipelineOutput:
     # (same LLM for every strategy); see resource_probe.gpu_context().
     retrieval_cpu_s: float | None = None   # real in-process CPU of the method
     peak_rss_mb: float | None = None       # peak benchmark-process memory (turn)
+    # Token usage (#64): prompt vs answer size — differs per strategy because the
+    # retrieved context size differs.
+    input_tokens: int | None = None        # tokens in the prompt sent to the LLM
+    output_tokens: int | None = None       # tokens in the generated answer
+    total_tokens: int | None = None        # input + output
 
 
 # Per-question performance measurements carried on PipelineOutput. Each becomes a
@@ -61,6 +66,9 @@ PERF_FIELDS = (
     "generation_latency_s",
     "retrieval_cpu_s",
     "peak_rss_mb",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
 )
 
 

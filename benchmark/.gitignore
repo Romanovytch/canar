@@ -8,9 +8,3 @@ __pycache__/
 
 # Evaluation outputs — whole results tree (run_*/<strategy>/metrics.csv + answers.md)
 **/results/
-
-# Local notes (not for the repo)
-SPARSE_TODO.md
-ISSUE_25_NOTES.md
-PERF_BENCHMARK_PLAN.md
-ISSUE_53_HARDWARE_METRICS.md
