@@ -75,6 +75,37 @@ def test_csv_dataset_runs_with_no_metadata_columns(stub_ragas, tmp_path):
     assert "question_type" not in metrics.columns
 
 
+def test_pipeline_failure_is_saved_as_error_not_zero(stub_ragas, tmp_path):
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+
+    def failing_pipeline(question):
+        raise RuntimeError("boom")
+
+    out_df = run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=csv),
+        pipeline=failing_pipeline,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label="err",
+        group_dir=tmp_path,
+    )
+
+    assert out_df["pipeline_status"].iloc[0] == "ERROR"
+    assert "RuntimeError: boom" in out_df["pipeline_error"].iloc[0]
+    assert out_df["response"].iloc[0] == "[PIPELINE_ERROR]"
+    assert out_df["hit_rate"].iloc[0] == "ERROR"
+
+    metrics = pd.read_csv(tmp_path / "err" / "metrics.csv")
+    assert metrics["pipeline_status"].iloc[0] == "ERROR"
+    assert metrics["hit_rate"].iloc[0] == "ERROR"
+
+
 def test_yaml_metadata_reaches_metrics_csv(stub_ragas, tmp_path):
     yaml_text = """
 dataset_id: d

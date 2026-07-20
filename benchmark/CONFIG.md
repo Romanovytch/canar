@@ -19,12 +19,14 @@ environment:                 # expected env; preflight aborts if canar/.env diff
   collection: utilitr_v2     # multi-vector collection (dense + sparse)
 
 profiles:                    # retrieval strategies to compare
-  - name: dense
-    strategy: simple_vector
-  - name: sparse
-    strategy: simple_sparse
-  - name: hybrid
-    strategy: hybrid
+  - name: simple_vector
+    top_k: 5
+    score_threshold: 0.35
+    source_filter: utilitr
+    fallback_top_k: 3
+  - name: simple_vector_parent_child
+    top_k: 10
+    score_threshold: 0.20
 ```
 
 ## How it works
@@ -33,13 +35,13 @@ profiles:                    # retrieval strategies to compare
   `profile` name and provenance (embed model, collection, judge, git commit).
 - Each profile writes its own folder under `e2e/results/`, containing
   `metrics.csv` (the scores) and `answers.md` (question, answer, reference,
-  retrieved context). The run folder also holds `comparison.csv` (the strategies
-  side by side) and `run_context.txt` (the shared setup).
-- When there's more than one profile, a **comparison table** is printed at the end.
-- A profile only **names** a strategy that `RetrievalService` already builds from
-  `canar/.env`. Its settings (`top_k`, fusion, ...) live in the product's
-  `canar/app/retrieval/profiles.py` — the benchmark measures the real shipped
-  strategy, it does not override it.
+  retrieved context).
+- When there's more than one profile, a **comparison table** of mean scores is
+  printed at the end.
+- Each profile name must match a CanaR `RetrievalProfile` from
+  `canar/app/retrieval/profiles.py`. The benchmark runs the product's real
+  profile, so `simple_vector` measures the exact profile the service knows by
+  that name.
 
 ## The `environment` block
 

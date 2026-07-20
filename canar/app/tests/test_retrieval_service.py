@@ -144,7 +144,7 @@ def test_retrieval_service_expands_hits_when_profile_enables_expansion():
             )
         },
         agent_profiles={"r_helpdesk": "simple_vector_parent_child"},
-        strategies={"simple_vector": strategy},
+        strategies={"simple_vector_parent_child": strategy},
         hit_expanders={"parent_child": expander},
     )
 
@@ -262,12 +262,12 @@ def test_retrieval_service_builds_hybrid_with_dense_and_sparse_vector_names(
     assert hybrid.sparse_strategy.profile.vector_name == "text-sparse"
     assert hybrid.dense_strategy.profile.dense == DenseRetrievalParams(
         fetch_top_k=10,
-        min_score=0.35,
+        min_score=0.8,
         max_kept=None,
     )
     assert hybrid.sparse_strategy.profile.sparse == SparseRetrievalParams(
         fetch_top_k=10,
-        min_score_ratio=0.35,
+        min_score_ratio=0.8,
         gap_ratio=None,
         max_kept=None,
     )
@@ -481,7 +481,7 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
             )
         },
         agent_profiles={"r_helpdesk": "hybrid_rerank_bge"},
-        strategies={"hybrid": strategy},
+        strategies={"hybrid_rerank_bge": strategy},
         reranker=reranker,
     )
 
@@ -605,10 +605,14 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         "simple_sparse_parent_child",
         "hybrid",
         "hybrid_rerank_bge",
-        "hybrid_rerank_qwen",
+        "hybrid_rerank_qwen_0.6b",
+        "hybrid_rerank_qwen_4b",
+        "hybrid_rerank_qwen_8b",
         "hybrid_parent_child",
         "hybrid_parent_child_rerank_bge",
-        "hybrid_parent_child_rerank_qwen",
+        "hybrid_parent_child_rerank_qwen_0.6b",
+        "hybrid_parent_child_rerank_qwen_4b",
+        "hybrid_parent_child_rerank_qwen_8b",
     }
     assert "parent_child" in service.hit_expanders
     assert vector_parent_child.strategy == "simple_vector"
@@ -617,7 +621,7 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
     )
     assert vector_parent_child.dense == DenseRetrievalParams(
         fetch_top_k=5,
-        min_score=0.35,
+        min_score=0.8,
         max_kept=None,
     )
     assert sparse_parent_child.strategy == "simple_sparse"
@@ -626,7 +630,7 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
     )
     assert sparse_parent_child.sparse == SparseRetrievalParams(
         fetch_top_k=5,
-        min_score_ratio=0.35,
+        min_score_ratio=0.8,
         gap_ratio=None,
         max_kept=None,
     )
@@ -636,12 +640,12 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
     )
     assert hybrid_parent_child.dense == DenseRetrievalParams(
         fetch_top_k=10,
-        min_score=0.35,
+        min_score=0.8,
         max_kept=None,
     )
     assert hybrid_parent_child.sparse == SparseRetrievalParams(
         fetch_top_k=10,
-        min_score_ratio=0.35,
+        min_score_ratio=0.8,
         gap_ratio=None,
         max_kept=None,
     )
