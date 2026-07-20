@@ -146,7 +146,7 @@ def test_retrieval_service_expands_hits_when_profile_enables_expansion():
             )
         },
         agent_profiles={"r_helpdesk": "simple_vector_parent_child"},
-        strategies={"simple_vector": strategy},
+        strategies={"simple_vector_parent_child": strategy},
         hit_expanders={"parent_child": expander},
     )
 
@@ -490,7 +490,7 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
             )
         },
         agent_profiles={"r_helpdesk": "hybrid_rerank_bge"},
-        strategies={"hybrid": strategy},
+        strategies={"hybrid_rerank_bge": strategy},
         reranker=reranker,
     )
 
@@ -518,43 +518,6 @@ def test_retrieval_service_reranks_hybrid_hits_when_enabled():
 
 
 def test_retrieval_service_keeps_hybrid_only_when_profile_has_no_rerank_block():
-    dense_embed = FakeEmbedClient()
-    sparse_embed = FakeSparseEmbedClient()
-    strategy = FakeStrategy()
-    reranker = FakeReranker()
-    service = RetrievalService(
-        embed_client=dense_embed,
-        sparse_embed_client=sparse_embed,
-        profiles={
-            "hybrid": RetrievalProfile(
-                name="hybrid",
-                strategy="hybrid",
-                collections=("docs",),
-                dense=DenseRetrievalParams(),
-                sparse=SparseRetrievalParams(),
-                fusion=FusionRetrievalParams(),
-            )
-        },
-        agent_profiles={"r_helpdesk": "hybrid"},
-        strategies={"hybrid": strategy},
-        reranker=reranker,
-    )
-
-    hits = service.search("r_helpdesk", "comment filtrer ?")
-
-    assert [hit.text for hit in hits] == ["answer context"]
-    assert strategy.queries == [
-        RetrievalQuery(
-            text="comment filtrer ?",
-            profile_name="hybrid",
-            dense_vector=[1.0, 2.0],
-            sparse_vector=SparseVector(indices=[3], values=[0.7]),
-        )
-    ]
-    assert reranker.calls == []
-
-
-def test_retrieval_service_without_profile_rerank_params_keeps_hybrid_only():
     dense_embed = FakeEmbedClient()
     sparse_embed = FakeSparseEmbedClient()
     strategy = FakeStrategy()
