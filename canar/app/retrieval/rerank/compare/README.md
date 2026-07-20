@@ -25,7 +25,7 @@ python canar/app/retrieval/rerank/compare/compare.py "ma question" --qdrant-url 
 
 `--top-k` only changes how many reranked results are printed/returned. It does
 not increase the hybrid candidate pool sent to the reranker; that pool is set by
-the selected rerank profile's `fusion.candidate_top_k` value.
+the selected rerank profile's resolved fusion `output_top_k` value.
 
 ## How to Read the Output
 

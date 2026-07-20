@@ -29,7 +29,8 @@ def test_profiles_inherit_root_defaults_and_keep_option_specific_parameters():
     assert sparse.sparse == SparseRetrievalParams(vector_name="text-sparse")
     assert hybrid.dense == vector.dense
     assert hybrid.sparse == sparse.sparse
-    assert hybrid.fusion == FusionRetrievalParams(candidate_top_k=5)
+    assert hybrid.output_top_k == 5
+    assert hybrid.fusion == FusionRetrievalParams()
 
 
 def test_parent_child_profiles_are_derived_from_canonical_profiles():
@@ -54,10 +55,13 @@ def test_reranker_variants_only_change_model_and_parent_option():
     parent_qwen = profiles["hybrid_parent_child_rerank_qwen_4b"]
 
     assert bge.fetch_top_k == 20
-    assert bge.fusion == FusionRetrievalParams(candidate_top_k=20)
-    assert bge.rerank == RerankRetrievalParams(model="bge-v2-m3")
+    assert bge.output_top_k == 20
+    assert bge.fusion == FusionRetrievalParams()
+    assert bge.rerank == RerankRetrievalParams(output_top_k=5, model="bge-v2-m3")
     assert qwen == replace(
-        bge, name="hybrid_rerank_qwen_4b", rerank=RerankRetrievalParams(model="qwen-4b")
+        bge,
+        name="hybrid_rerank_qwen_4b",
+        rerank=RerankRetrievalParams(output_top_k=5, model="qwen-4b"),
     )
     assert parent_qwen == replace(
         qwen,

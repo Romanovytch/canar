@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from canar.app.retrieval.models import (
     DenseRetrievalParams,
     FusionRetrievalParams,
@@ -10,11 +12,17 @@ from canar.app.retrieval.models import (
 )
 
 AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
-    "generic_agent": "hybrid",
+    "generic_agent": "hybrid_rerank_bge",
     "r_helpdesk": "simple_vector",
     "sas_to_r": None,
 }
 
+RERANKER_MODELS = {
+    "bge": "bge-v2-m3",
+    "qwen_0.6b": "qwen-0.6b",
+    "qwen_4b": "qwen-4b",
+    "qwen_8b": "qwen-8b",
+}
 
 
 def build_retrieval_profiles(
@@ -22,401 +30,82 @@ def build_retrieval_profiles(
     dense_vector_name: str | None = None,
     sparse_vector_name: str | None = None,
 ) -> dict[str, RetrievalProfile]:
-    return {
-        "simple_vector": RetrievalProfile(
-            name="simple_vector",
-            strategy="simple_vector",
-            collections=collections,
-            dense=DenseRetrievalParams(
-                fetch_top_k=5,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=3,
-            vector_name=dense_vector_name or None,
-        ),
-        "simple_vector_parent_child": RetrievalProfile(
-            name="simple_vector_parent_child",
-            strategy="simple_vector",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=3,
-            vector_name=dense_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=5,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-        ),
-        "simple_sparse": RetrievalProfile(
-            name="simple_sparse",
-            strategy="simple_sparse",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=3,
-            vector_name=sparse_vector_name or None,
-            sparse=SparseRetrievalParams(
-                fetch_top_k=5,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-        ),
-        "simple_sparse_parent_child": RetrievalProfile(
-            name="simple_sparse_parent_child",
-            strategy="simple_sparse",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=3,
-            vector_name=sparse_vector_name or None,
-            sparse=SparseRetrievalParams(
-                fetch_top_k=5,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-        ),
-        "hybrid": RetrievalProfile(
-            name="hybrid",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=10,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=10,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=5,
-            ),
-        ),
-        "hybrid_rerank_bge": RetrievalProfile(
-            name="hybrid_rerank_bge",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="bge-v2-m3",
-                device= "auto",
-                max_length= 8192,
-            ),
-        ),
-        "hybrid_rerank_qwen_0.6b": RetrievalProfile(
-            name="hybrid_rerank_qwen_0.6b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-0.6b",
-                device= "auto",
-                max_length= 8192,
-            ),
-        ),
-        "hybrid_rerank_qwen_4b": RetrievalProfile(
-            name="hybrid_rerank_qwen_4b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-4b",
-                device= "auto",
-                max_length= 8192,
-            ),
-        ),
-        "hybrid_rerank_qwen_8b": RetrievalProfile(
-            name="hybrid_rerank_qwen_8b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-8b",
-                device= "auto",
-                max_length= 8192,
-            ),
-        ),
-        "hybrid_parent_child": RetrievalProfile(
-            name="hybrid_parent_child",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=10,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=10,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=5,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-        ),
-        "hybrid_parent_child_rerank_bge": RetrievalProfile(
-            name="hybrid_parent_child_rerank_bge",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="bge-v2-m3",
-                device= "auto",
-                max_length= 8192,
-            ),
-        ),
+    dense = DenseRetrievalParams(vector_name=dense_vector_name or None)
+    sparse = SparseRetrievalParams(vector_name=sparse_vector_name or None)
+    parent_child = ParentChildRetrievalParams()
 
-        "hybrid_parent_child_rerank_qwen_0.6b": RetrievalProfile(
-            name="hybrid_parent_child_rerank_qwen_0.6b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-0.6b",
-                device= "auto",
-                max_length= 8192,
-            ),
+    simple_vector = RetrievalProfile(
+        name="simple_vector",
+        strategy="simple_vector",
+        collections=collections,
+        min_score=0.8,
+        dense=dense,
+    )
+    simple_sparse = RetrievalProfile(
+        name="simple_sparse",
+        strategy="simple_sparse",
+        collections=collections,
+        min_score=0.8,
+        sparse=sparse,
+    )
+    hybrid = RetrievalProfile(
+        name="hybrid",
+        strategy="hybrid",
+        collections=collections,
+        min_score=0.8,
+        fallback_top_k=5,
+        dense=dense,
+        sparse=sparse,
+        fusion=FusionRetrievalParams(),
+    )
+
+    # raise only min_score to 0.9
+    # simple_vector = replace(simple_vector, min_score=0.9)
+    # simple_sparse = replace(simple_sparse, min_score=0.9)
+    # hybrid = replace(hybrid, min_score=0.9)
+
+    profiles = {
+        simple_vector.name: simple_vector,
+        "simple_vector_parent_child": replace(
+            simple_vector,
+            name="simple_vector_parent_child",
+            parent_child=parent_child,
         ),
-        "hybrid_parent_child_rerank_qwen_4b": RetrievalProfile(
-            name="hybrid_parent_child_rerank_qwen_4b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-4b",
-                device= "auto",
-                max_length= 8192,
-            ),
+        simple_sparse.name: simple_sparse,
+        "simple_sparse_parent_child": replace(
+            simple_sparse,
+            name="simple_sparse_parent_child",
+            parent_child=parent_child,
         ),
-        "hybrid_parent_child_rerank_qwen_8b": RetrievalProfile(
-            name="hybrid_parent_child_rerank_qwen_8b",
-            strategy="hybrid",
-            collections=collections,
-            score_threshold=0.8,
-            source_filter=None,
-            fallback_top_k=5,
-            vector_name=sparse_vector_name or None,
-            dense=DenseRetrievalParams(
-                fetch_top_k=20,
-                min_score=0.8,
-                max_kept=None,
-            ),
-            sparse=SparseRetrievalParams(
-                fetch_top_k=20,
-                min_score_ratio=0.8,
-                gap_ratio=None,
-                max_kept=None,
-            ),
-            # On rerank profiles this is the RRF candidate pool sent to rerank.
-            fusion=FusionRetrievalParams(
-                method="rrf",
-                rrf_k=60,
-                weights={"dense": 1.0, "sparse": 1.0},
-                output_top_k=20,
-            ),
-            parent_child=ParentChildRetrievalParams(
-                parent_collection_suffix="_parent",
-            ),
-            rerank=RerankRetrievalParams(
-                output_top_k=5,
-                reranker_name="qwen-8b",
-                device= "auto",
-                max_length= 8192,
-            ),
+        hybrid.name: hybrid,
+        "hybrid_parent_child": replace(
+            hybrid,
+            name="hybrid_parent_child",
+            parent_child=parent_child,
         ),
     }
+
+    default_rerank = RerankRetrievalParams(output_top_k=5)
+    rerank_base = replace(
+        hybrid,
+        name="hybrid_rerank_bge",
+        fetch_top_k=20,
+        output_top_k=20,
+        rerank=default_rerank,
+    )
+    for suffix, model in RERANKER_MODELS.items():
+        rerank_profile = replace(
+            rerank_base,
+            name=f"hybrid_rerank_{suffix}",
+            rerank=replace(default_rerank, model=model),
+        )
+        profiles[rerank_profile.name] = rerank_profile
+
+        parent_rerank_profile = replace(
+            rerank_profile,
+            name=f"hybrid_parent_child_rerank_{suffix}",
+            parent_child=parent_child,
+        )
+        profiles[parent_rerank_profile.name] = parent_rerank_profile
+
+    return profiles

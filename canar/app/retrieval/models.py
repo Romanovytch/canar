@@ -57,13 +57,13 @@ class FusionRetrievalParams:
             "sparse": 1.0,
         }
     )
-    candidate_top_k: int = 5
+    output_top_k: int | None = None
 
     def __post_init__(self) -> None:
         if self.rrf_k <= 0:
             raise ValueError("fusion.rrf_k must be greater than 0")
-        if self.candidate_top_k <= 0:
-            raise ValueError("fusion.candidate_top_k must be greater than 0")
+        if self.output_top_k is not None and self.output_top_k <= 0:
+            raise ValueError("fusion.output_top_k must be greater than 0")
 
 
 @dataclass(frozen=True)
@@ -77,14 +77,14 @@ class ParentChildRetrievalParams:
 
 @dataclass(frozen=True)
 class RerankRetrievalParams:
-    final_top_k: int = 5
+    output_top_k: int | None = None
     model: str = "bge-v2-m3"
     device: str | None = "auto"
     max_length: int = 8192
 
     def __post_init__(self) -> None:
-        if self.final_top_k <= 0:
-            raise ValueError("rerank.final_top_k must be greater than 0")
+        if self.output_top_k is not None and self.output_top_k <= 0:
+            raise ValueError("rerank.output_top_k must be greater than 0")
         if not self.model:
             raise ValueError("rerank.model must not be empty")
         if self.max_length <= 0:
@@ -99,7 +99,7 @@ class RetrievalProfile:
     fetch_top_k: int = 10
     min_score: float = 0.75
     fallback_top_k: int = 3
-    max_results: int | None = None
+    output_top_k: int = 5
     source_filter: str | None = None
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
@@ -118,8 +118,8 @@ class RetrievalProfile:
             raise ValueError("profile.min_score must be between 0 and 1")
         if self.fallback_top_k < 0:
             raise ValueError("profile.fallback_top_k must be greater than or equal to 0")
-        if self.max_results is not None and self.max_results <= 0:
-            raise ValueError("profile.max_results must be greater than 0")
+        if self.output_top_k <= 0:
+            raise ValueError("profile.output_top_k must be greater than 0")
 
         required_blocks = {
             "simple_vector": (("dense", self.dense),),

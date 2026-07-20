@@ -32,7 +32,7 @@ If those files conflict with this file, prefer this order:
 - The default implemented profile/strategy is `simple_vector`, mapped to `r_helpdesk`.
 - Optional sparse retrieval lives in the separate `simple_sparse` profile/strategy and is not mapped to an agent by default.
 - `sas_to_r` has no retrieval profile.
-- Retrieval profiles default to `fetch_top_k=10`, `min_score=0.75`, `source_filter=None`, and top-3 fallback. Dense and sparse blocks may override `fetch_top_k` and `min_score`; `simple_vector` preserves per-collection min-max normalization.
+- Retrieval profiles default to `fetch_top_k=10`, `min_score=0.75`, `output_top_k=5`, `source_filter=None`, and top-3 fallback. Dense and sparse blocks may override `fetch_top_k` and `min_score`; fusion and rerank blocks may override root `output_top_k`; `simple_vector` preserves per-collection min-max normalization.
 - Qdrant-specific imports, filters, query arguments, named-vector selection, and payload conversion belong in `canar/app/retrieval/adapters/qdrant.py`.
 - Strategies should return project-owned `RetrievalHit` objects from `canar/app/retrieval/models.py`; agents and UI code must not depend on Qdrant result objects or Qdrant-shaped payload dictionaries.
 - `canar/app/api/retrieval.py::search_qdrant` is a backward-compatible wrapper only. New code should use the retrieval service.

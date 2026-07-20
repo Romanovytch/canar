@@ -36,6 +36,7 @@ def test_profile_accepts_complete_hybrid_configuration():
     assert profile.fetch_top_k == 10
     assert profile.min_score == 0.75
     assert profile.fallback_top_k == 3
+    assert profile.output_top_k == 5
     assert profile.source_filter is None
 
 
@@ -45,7 +46,7 @@ def test_profile_accepts_complete_hybrid_configuration():
         ("fetch_top_k", 0),
         ("min_score", 1.1),
         ("fallback_top_k", -1),
-        ("max_results", 0),
+        ("output_top_k", 0),
     ],
 )
 def test_profile_rejects_invalid_root_policy(field, value):

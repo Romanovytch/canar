@@ -38,7 +38,7 @@ Common retrieval behavior is configured at the profile root:
 - `min_score`
 - `source_filter`
 - `fallback_top_k`
-- `max_results`
+- `output_top_k`
 - `dense.vector_name` / `sparse.vector_name`
 
 Hybrid profiles can tune dense retrieval, sparse retrieval, and fusion separately:
@@ -50,20 +50,20 @@ RetrievalProfile(
     collections=collections,
     fetch_top_k=30,
     min_score=0.72,
-    max_results=10,
+    output_top_k=10,
     dense=DenseRetrievalParams(vector_name="text-dense"),
     sparse=SparseRetrievalParams(vector_name="text-sparse"),
     fusion=FusionRetrievalParams(
         method="weighted_rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.2},
-        candidate_top_k=8,
+        output_top_k=8,
     ),
 )
 ```
 
-Dense and sparse blocks only contain retriever-specific options. Fusion uses
-`candidate_top_k`, while reranking uses `final_top_k`.
+Dense and sparse blocks only contain retriever-specific options. Fusion and reranking
+both use `output_top_k`; when omitted, they inherit the profile root value.
 
 Parent-child profiles use the same dense/sparse/fusion blocks for child retrieval and a
 small parent-child block for parent lookup behavior:

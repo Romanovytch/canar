@@ -91,7 +91,7 @@ def test_hybrid_profiles_are_registered_with_expected_parameters():
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        candidate_top_k=5,
+        output_top_k=None,
     )
     assert profile.rerank is None
 
@@ -105,9 +105,10 @@ def test_hybrid_profiles_are_registered_with_expected_parameters():
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        candidate_top_k=20,
+        output_top_k=None,
     )
-    assert rerank_profile.rerank == RerankRetrievalParams(final_top_k=5)
+    assert rerank_profile.output_top_k == 20
+    assert rerank_profile.rerank == RerankRetrievalParams(output_top_k=5)
 
 
 def test_hybrid_profile_exposes_root_policy_and_option_blocks_directly():
@@ -121,9 +122,9 @@ def test_hybrid_profile_exposes_root_policy_and_option_blocks_directly():
             method="weighted_rrf",
             rrf_k=12,
             weights={"dense": 1.5, "sparse": 2.0},
-            candidate_top_k=8,
+            output_top_k=8,
         ),
-        rerank=RerankRetrievalParams(final_top_k=5),
+        rerank=RerankRetrievalParams(output_top_k=5),
     )
 
     assert profile.fetch_top_k == 30
@@ -134,9 +135,9 @@ def test_hybrid_profile_exposes_root_policy_and_option_blocks_directly():
         method="weighted_rrf",
         rrf_k=12,
         weights={"dense": 1.5, "sparse": 2.0},
-        candidate_top_k=8,
+        output_top_k=8,
     )
-    assert profile.rerank == RerankRetrievalParams(final_top_k=5)
+    assert profile.rerank == RerankRetrievalParams(output_top_k=5)
 
 
 def test_simple_vector_profile_uses_dense_vector_name():
@@ -204,10 +205,10 @@ def test_rrf_sparse_weight_can_favor_sparse_results():
     assert [result.text for result in fused] == ["sparse top", "dense top"]
 
 
-def test_hybrid_strategy_uses_profile_fusion_candidate_top_k():
+def test_hybrid_strategy_uses_fusion_output_top_k_override():
     profile = hybrid_profile(
         name="hybrid_rerank_bge",
-        fusion=FusionRetrievalParams(method="rrf", candidate_top_k=20),
+        fusion=FusionRetrievalParams(method="rrf", output_top_k=20),
     )
     dense = FakeStrategy([hit("dense top")])
     sparse = FakeStrategy([hit("sparse top")])
@@ -225,13 +226,28 @@ def test_hybrid_strategy_uses_profile_fusion_candidate_top_k():
     assert top_k == 20
 
 
+def test_hybrid_strategy_inherits_profile_output_top_k():
+    profile = hybrid_profile(output_top_k=7)
+    fusion = RecordingFusion()
+
+    HybridStrategy(
+        profile,
+        FakeStrategy([hit("dense top")]),
+        FakeStrategy([hit("sparse top")]),
+        fusion_strategies={"rrf": fusion},
+    ).search(hybrid_query())
+
+    _ranked_lists, top_k, _weights = fusion.calls[0]
+    assert top_k == 7
+
+
 def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():
     profile = hybrid_profile(
         fusion=FusionRetrievalParams(
             method="weighted_rrf",
             rrf_k=60,
             weights={"dense": 3.0, "sparse": 1.0},
-            candidate_top_k=2,
+            output_top_k=2,
         ),
     )
     dense = FakeStrategy([hit("dense top")])
@@ -253,7 +269,7 @@ def test_hybrid_strategy_uses_profile_rrf_k():
         fusion=FusionRetrievalParams(
             method="rrf",
             rrf_k=2,
-            candidate_top_k=1,
+            output_top_k=1,
         ),
     )
     dense = FakeStrategy([hit("dense top")])
@@ -290,7 +306,7 @@ def test_rrf_rejects_weight_count_mismatch():
 
 def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
     profile = hybrid_profile(
-        fusion=FusionRetrievalParams(method="rrf", candidate_top_k=2),
+        fusion=FusionRetrievalParams(method="rrf", output_top_k=2),
     )
     dense = FakeStrategy([hit("dense top"), hit("shared", metadata={"chunk_id": "same"})])
     sparse = FakeStrategy([hit("shared", metadata={"chunk_id": "same"}), hit("sparse exact")])
@@ -320,7 +336,7 @@ def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
 
 def test_hybrid_strategy_keeps_sparse_exact_match_in_fused_results():
     profile = hybrid_profile(
-        fusion=FusionRetrievalParams(method="rrf", candidate_top_k=3),
+        fusion=FusionRetrievalParams(method="rrf", output_top_k=3),
     )
     dense = FakeStrategy([hit("semantic result one"), hit("semantic result two")])
     sparse = FakeStrategy([hit("exact variable_name result")])

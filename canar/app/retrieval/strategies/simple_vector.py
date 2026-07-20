@@ -50,6 +50,4 @@ class SimpleVectorStrategy:
         pruned = [hit for hit in hits if hit.score_norm >= min_score]
         if not pruned:
             pruned = hits[: self.profile.fallback_top_k]
-        if self.profile.max_results is not None:
-            pruned = pruned[: self.profile.max_results]
-        return pruned
+        return pruned[: self.profile.output_top_k]

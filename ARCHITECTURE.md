@@ -94,7 +94,8 @@ Root retrieval defaults are shared by dense and sparse strategies:
 - `fetch_top_k=10`: candidates requested per collection and retriever.
 - `min_score=0.75`: minimum normalized score after per-collection normalization.
 - `fallback_top_k=3`: results returned when pruning removes every hit.
-- `max_results=None`: optional cap applied after pruning or fallback.
+- `output_top_k=5`: output cap after pruning or fallback and the default output cap
+  for later stages.
 - `source_filter=None`: no source payload filter by default.
 
 Strategy-specific `fetch_top_k` and `min_score` values override the root values when
@@ -130,6 +131,7 @@ RetrievalProfile(
     collections=cfg.qdrant_collections,
     fetch_top_k=20,
     fallback_top_k=5,
+    output_top_k=20,
     dense=DenseRetrievalParams(
         vector_name=cfg.qdrant_dense_vector_name or None,
     ),
@@ -140,10 +142,9 @@ RetrievalProfile(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        candidate_top_k=20,
     ),
     rerank=RerankRetrievalParams(
-        final_top_k=5,
+        output_top_k=5,
         model="bge-v2-m3",
     ),
 )
@@ -184,7 +185,7 @@ The `simple_vector` strategy applies the common profile policy:
 - Fuse all collection hits by sorting on `(score_norm, score)` descending.
 - Keep hits with `score_norm >= dense.min_score` when set, otherwise use profile `min_score=0.75`.
 - If no hits survive the threshold, return the top 3 fused hits.
-- Apply `max_results` last when configured.
+- Apply profile `output_top_k` last.
 
 ### `simple_sparse`
 
@@ -199,7 +200,7 @@ The `simple_sparse` strategy mirrors `simple_vector` with a sparse query vector:
 - Keep hits with `score_norm >= sparse.min_score` when set, otherwise use profile `min_score=0.75`.
 - When `sparse.gap_ratio` is configured, keep results until the first consecutive normalized-score gap greater than that ratio.
 - If no hits survive the threshold, return the top 3 fused hits.
-- Apply `max_results` last when configured.
+- Apply profile `output_top_k` last.
 
 This strategy assumes sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
 
@@ -219,9 +220,10 @@ Hybrid retrieval runs both branches with the same root policy and their respecti
 overrides. The precedence is `dense/sparse override` then `RetrievalProfile` default.
 
 Reranking is enabled by selecting a rerank profile, such as `hybrid_rerank_bge`, with
-`rerank=RerankRetrievalParams(...)`. On rerank profiles, `fusion.candidate_top_k` is
-the RRF candidate pool sent to rerank, and `rerank.final_top_k` is the final
-reranked result count.
+`rerank=RerankRetrievalParams(...)`. Fusion and rerank blocks may override
+`output_top_k`; when omitted, they inherit `RetrievalProfile.output_top_k`. The
+implemented rerank profiles use root `output_top_k=20` for dense/sparse branch caps
+and the fused rerank candidate pool, then `rerank.output_top_k=5` for final output.
 
 ## Data model
 
@@ -254,7 +256,7 @@ class FusionRetrievalParams:
     method: FusionMethod = "rrf"
     rrf_k: int = 60
     weights: dict[str, float] = field(default_factory=dict)
-    candidate_top_k: int = 5
+    output_top_k: int | None = None
 
 
 @dataclass(frozen=True)
@@ -264,7 +266,7 @@ class ParentChildRetrievalParams:
 
 @dataclass(frozen=True)
 class RerankRetrievalParams:
-    final_top_k: int = 5
+    output_top_k: int | None = None
     model: str = "bge-v2-m3"
     device: str | None = "auto"
     max_length: int = 8192
@@ -278,7 +280,7 @@ class RetrievalProfile:
     fetch_top_k: int = 10
     min_score: float = 0.75
     fallback_top_k: int = 3
-    max_results: int | None = None
+    output_top_k: int = 5
     source_filter: str | None = None
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
@@ -389,7 +391,8 @@ No retrieval context or history is added for this agent.
 - Select retrieval profile by agent using Python config in `canar/app/retrieval/profiles.py`.
 - Keep `simple_vector` as the default retrieval strategy for now.
 - Keep shared retrieval policy at the profile root and allow dense/sparse blocks to override only retriever-specific values.
-- Use stage-specific limits: `fetch_top_k`, `fusion.candidate_top_k`, and `rerank.final_top_k`.
+- Use `fetch_top_k` for per-retriever input and `output_top_k` for stage output.
+  Nested fusion/rerank values override the root output default only when needed.
 - Generate parent-child and reranker variants from canonical profiles with `dataclasses.replace`.
 - Keep Qdrant-specific imports and SDK calls in `canar/app/retrieval/adapters/qdrant.py`.
 - Return `RetrievalHit` objects from retrieval code; do not pass Qdrant objects or Qdrant-shaped payload dicts into agents.

@@ -38,7 +38,7 @@ def build_profiles(
         rerank=replace(
             params,
             model=reranker_name,
-            final_top_k=top_k if top_k is not None else params.final_top_k,
+            output_top_k=top_k if top_k is not None else params.output_top_k,
             device=device if device is not None else params.device,
         ),
     )
@@ -124,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         "--top-k",
         type=int,
         default=None,
-        help="Override the final result count; fusion.candidate_top_k controls candidates.",
+        help="Override rerank output count; profile.output_top_k controls candidates.",
     )
     parser.add_argument("--device", default=None, help="Override the profile rerank device.")
     parser.add_argument("--max-chars", type=int, default=280, help="Max text chars per hit.")
@@ -147,7 +147,7 @@ def main() -> None:
     print(f"collection={args.collection}")
     print(f"sparse_model={cfg.fastembed_sparse_model}")
     print(f"rerank_device={args.device or 'profile default'}")
-    print(f"final_top_k={args.top_k or 'profile default'}")
+    print(f"rerank_output_top_k={args.top_k or 'profile default'}")
 
     hybrid_service = build_service(cfg, agent=args.agent, use_rerank=False)
     hybrid_hits = hybrid_service.search(args.agent, args.query)

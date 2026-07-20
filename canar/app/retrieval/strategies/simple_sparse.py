@@ -52,9 +52,7 @@ class SimpleSparseStrategy:
             pruned = self._keep_until_score_gap(pruned, params.gap_ratio)
         if not pruned:
             pruned = hits[: self.profile.fallback_top_k]
-        if self.profile.max_results is not None:
-            pruned = pruned[: self.profile.max_results]
-        return pruned
+        return pruned[: self.profile.output_top_k]
 
     def _keep_until_score_gap(
         self,

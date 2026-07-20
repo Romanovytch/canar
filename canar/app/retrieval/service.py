@@ -173,7 +173,11 @@ class RetrievalService:
             return reranker.rerank(
                 query=query,
                 candidates=hits,
-                top_k=rerank_params.final_top_k,
+                top_k=(
+                    rerank_params.output_top_k
+                    if rerank_params.output_top_k is not None
+                    else profile.output_top_k
+                ),
             )
         return hits
 

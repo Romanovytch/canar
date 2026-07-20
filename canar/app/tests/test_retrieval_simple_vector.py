@@ -69,7 +69,7 @@ def test_simple_vector_dense_params_override_profile_fetch_and_threshold():
         collections=("docs",),
         fetch_top_k=10,
         min_score=0.75,
-        max_results=2,
+        output_top_k=2,
         dense=DenseRetrievalParams(fetch_top_k=4, min_score=0.25),
     )
     adapter = FakeDenseAdapter(
