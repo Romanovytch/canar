@@ -441,7 +441,7 @@ def build_retrieval_profiles(
         fusion=FusionRetrievalParams(
             method="rrf",
             rrf_k=60,
-            weights={"dense": 3.0, "sparse": 1.0 },
+            weights={"dense": 3.0, "sparse": 1.0},
             output_top_k=2,
         ),
         summary=SummaryRetrievalParams(
