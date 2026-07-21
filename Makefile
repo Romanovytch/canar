@@ -35,27 +35,27 @@ venv:
 	python -m venv .venv
 
 install:
-	. .venv_canar/bin/activate && pip install -U pip && pip install -e ".[dev]"
+	. .venv/bin/activate && pip install -U pip && pip install -e ".[dev]"
 
 install-torch:
-	. .venv_canar/bin/activate &&pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
+	. .venv/bin/activate &&pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
 
 install-rerank:
-	. .venv_canar/bin/activate && pip install -e ".[rerank]"
+	. .venv/bin/activate && pip install -e ".[rerank]"
 
 run:
-	. .venv_canar/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
+	. .venv/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
 
 test:
-	. .venv_canar/bin/activate && pytest -q
+	. .venv/bin/activate && pytest -q
 
 lint:
-	. .venv_canar/bin/activate && ruff check .
+	. .venv/bin/activate && ruff check .
 
 format:
-	. .venv_canar/bin/activate && ruff format . && ruff check . --fix
+	. .venv/bin/activate && ruff format . && ruff check . --fix
 
 format-check:
-	. .venv_canar/bin/activate && ruff format --check .
+	. .venv/bin/activate && ruff format --check .
 
 ci: lint format-check test

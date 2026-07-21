@@ -95,13 +95,15 @@ comparison table. Each run is saved as one folder:
 ```
 e2e/results/run_<timestamp>/
 ├── comparison.csv      the three strategies side by side
+├── run_context.txt     the shared setup (machine, tokenizer, GPU)
 ├── dense/   (metrics.csv + answers.md)
 ├── sparse/  (metrics.csv + answers.md)
 └── hybrid/  (metrics.csv + answers.md)
 ```
 
-For a quick pass, set `limit: 3` in `config.yaml`. See `REPRODUCIBILITY.md` for
-what reproduces exactly and what is only indicative.
+To also measure CPU/memory/GPU cost, run with `MEASURE_RESOURCES=1` (see
+`CONFIG.md`). For a quick pass, set `limit: 3` in `config.yaml`. See
+`REPRODUCIBILITY.md` for what reproduces exactly and what is only indicative.
 
 ## Fallback (dense-only)
 

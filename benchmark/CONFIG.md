@@ -3,29 +3,28 @@
 The benchmark reads its settings from `config.yaml` so you can adjust a run —
 and **compare retrieval strategies** — without touching code.
 
-It has two sections:
+It has three sections:
 
 ```yaml
 run:                         # how the benchmark runs
-  dataset: datasets/utilitr_questions.csv
+  dataset: datasets/utilitr_questions.csv   # CSV or YAML
   agent: r_helpdesk
   limit: null                # null = all questions; int = quick subset
   judge_model: qwen2.5:7b    # RAGAS judge; null = use the product LLM
   gen_max_tokens: 8192       # generation budget (see note below)
+  measure_resources: false   # true = also measure CPU/memory/GPU per phase
 
 environment:                 # expected env; preflight aborts if canar/.env differs
   embed_model: bge-m3
-  collection: utilitr_v1
+  collection: utilitr_v2     # multi-vector collection (dense + sparse)
 
 profiles:                    # retrieval strategies to compare
-  - name: product_default
-    strategy: simple_vector
+  - name: simple_vector
     top_k: 5
     score_threshold: 0.35
     source_filter: utilitr
     fallback_top_k: 3
-  - name: wider_topk
-    strategy: simple_vector
+  - name: simple_vector_parent_child
     top_k: 10
     score_threshold: 0.20
 ```
@@ -39,10 +38,10 @@ profiles:                    # retrieval strategies to compare
   retrieved context).
 - When there's more than one profile, a **comparison table** of mean scores is
   printed at the end.
-- Each profile's fields mirror CanaR's `RetrievalProfile`
-  (`canar/app/retrieval/`). The benchmark builds the product's real strategy
-  with those values — so `product_default` measures the product as it ships,
-  and the others are experiments to compare against it.
+- Each profile name must match a CanaR `RetrievalProfile` from
+  `canar/app/retrieval/profiles.py`. The benchmark runs the product's real
+  profile, so `simple_vector` measures the exact profile the service knows by
+  that name.
 
 ## The `environment` block
 
@@ -59,28 +58,66 @@ answer the project's central question: *which retrieval strategy works best for
 which kind of question?* If the product later adopts a YAML profile format, the
 schema is intentionally the same, so a profile can be shared.
 
+## Token usage (always measured)
+
+Every run counts the tokens sent to the LLM and generated back, so strategies can
+be compared on context size and generation cost. Counting is cheap, so it needs
+no flag.
+
+| Column | What it measures |
+|---|---|
+| `input_tokens` | the full prompt: system prompt + retrieved chunks + the question |
+| `output_tokens` | the generated answer |
+| `total_tokens` | input + output |
+
+The question is the same for every strategy — only the retrieved chunks differ —
+so `input_tokens` shows how much context a strategy pushes to the LLM.
+
+Per question these land in `metrics.csv`; per profile, `comparison.csv` carries
+the avg / min / max / total for each (e.g. `input_tokens_avg`, `input_tokens_max`,
+`total_tokens_total`). Tokens are counted with the configured model's tokenizer
+when available, else `tiktoken`, else a char heuristic; which one was used is
+recorded as `token_tokenizer` in `run_context.txt`. For exact counts, install
+`transformers` and set `BENCH_TOKENIZER=<hf-model-name>`.
+
 ## Resource benchmark (optional)
 
 Set `run.measure_resources: true` (or env `MEASURE_RESOURCES=1`) to also measure
-the **resource cost** of each retrieval strategy, not just answer quality. It's
-**off by default** and adds a tiny sampler thread per phase only when on.
+the **resource cost** of each retrieval strategy. It's **off by default** and adds
+a tiny sampler thread per phase only when on.
 
-Extra columns appear in `metrics.csv` and in the per-strategy `comparison.csv`:
+**Per-strategy columns** — the signals that actually differ between retrieval
+strategies, added to `metrics.csv` and `comparison.csv`:
 
-| Column | Meaning |
+| Column | What it measures | What it does NOT measure |
+|---|---|---|
+| `retrieval_latency_s` / `generation_latency_s` | wall-clock time of each phase | — |
+| `retrieval_cpu_s` | CPU seconds of the **benchmark process** during retrieval (real method cost, e.g. BM25) | the LLM server's CPU |
+| `peak_rss_mb` | peak memory of the **benchmark process** in the turn | the LLM server's memory |
+
+**Run-level context** — written once per run to `run_context.txt` (not compared
+per strategy). GPU work all happens in the LLM server, which is the same model
+for every strategy, so GPU usage describes the setup, not the method:
+
+| Field | Meaning |
 |---|---|
-| `retrieval_cpu_s` / `generation_cpu_s` | CPU seconds (user+sys) of that phase |
-| `retrieval_peak_rss_mb` / `generation_peak_rss_mb` | peak process memory in that phase |
-| `gpu_util_pct` / `gpu_mem_mb` | GPU utilization / memory — **device-level** |
+| `gpu` / `cpu_cores` / `ram_gb` | the machine (also stamped on every row) |
+| `gpu_mem_used_mb` | device GPU memory in use once the model is loaded |
+| `gpu_procs` | who holds it: `name(pid)=MB` (e.g. the ollama runner) |
+| `token_tokenizer` | which tokenizer produced the token counts (`tiktoken` / `transformers:<model>` / `heuristic`) |
 
-When on, the machine (CPU / cores / RAM / GPU) is also stamped into every row so
-runs stay comparable across computers.
+Why GPU is not per-strategy: retrieval never touches the GPU in this setup
+(embeddings go out over HTTP); the GPU is busy only during generation, and that
+is the same LLM for dense, sparse and hybrid. So a per-strategy GPU number would
+only reflect the shared model (and the one-time model load), not the method —
+misleading. It is reported once as context instead.
 
-Needs `psutil` (in the `benchmark` extra). GPU columns need `nvidia-ml-py`
-(`pip install -e ".[benchmark-gpu]"`); without it they stay empty. **Caveat:**
-generation/embedding run in a separate server process, so GPU numbers are the
-whole device's usage during the phase, not this process's — the clean
-per-strategy signals are time, CPU and memory.
+Deliberately not reported per turn: `generation_cpu_s` (mostly HTTP-wait), and
+absolute device GPU memory (only ever grows on a shared server — the source of
+the original #53 confusion).
+
+Needs `psutil` (in the `benchmark` extra, which also carries `nvidia-ml-py`;
+without a GPU the run-context GPU fields are simply absent).
 
 ## Notes
 
@@ -89,8 +126,10 @@ per-strategy signals are time, CPU and memory.
 - `gen_max_tokens`: `qwen3.5` spends a hidden budget "thinking" before it
   answers, so the app's default of 2048 returns empty answers on many
   questions. Keep this high.
-- Env vars override the matching `run` keys: `JUDGE_MODEL`, `GEN_MAX_TOKENS`.
-- `simple_vector` (dense) and `simple_sparse` (BM25) are wired in. A commented
-  `sparse_bm25` profile is ready in `config.yaml` — enable it once the collection
-  is ingested with sparse vectors (see `SPARSE_TODO.md`). Add further strategies
-  to the `STRATEGIES` map in `e2e/eval_e2e.py` as the product gains them.
+- Env vars override the matching `run` keys: `JUDGE_MODEL`, `GEN_MAX_TOKENS`,
+  `MEASURE_RESOURCES`. `BENCH_TOKENIZER` selects the tokenizer for token counts.
+- `dense` (simple_vector), `sparse` (simple_sparse / BM25) and `hybrid` are all
+  wired in. `sparse` and `hybrid` need `FASTEMBED_SPARSE_MODEL` set in
+  `canar/.env` and a collection ingested with sparse vectors (see `SETUP.md`).
+- A profile can name any strategy `RetrievalService` builds, so new product
+  strategies become available here without changing the benchmark.

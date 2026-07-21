@@ -2,8 +2,8 @@
 Load benchmark run settings + retrieval profiles from config.yaml.
 
 Product-agnostic on purpose: this only parses YAML into plain dataclasses.
-Turning a ProfileSpec into the product's RetrievalProfile/strategy is the
-caller's job (e2e/eval_e2e.py), so the harness stays decoupled from CanaR.
+Resolving a ProfileSpec name to the product's RetrievalProfile is the caller's
+job (e2e/eval_e2e.py), so the harness stays decoupled from CanaR.
 
 This mirrors the shape of the product's retrieval profiles
 (canar/app/retrieval/profiles.py) so the same hyperparameters — top_k,
@@ -23,7 +23,6 @@ import yaml
 class ProfileSpec:
     """One retrieval profile to benchmark. `params` holds the strategy's knobs."""
     name: str
-    strategy: str
     params: dict
 
 
@@ -49,8 +48,12 @@ def load_config(path: str | Path) -> BenchConfig:
     for raw in data.get("profiles", []):
         raw = dict(raw)
         name = raw.pop("name")
-        strategy = raw.pop("strategy", "simple_vector")
-        profiles.append(ProfileSpec(name=name, strategy=strategy, params=raw))
+        if "strategy" in raw:
+            raise ValueError(
+                f"Benchmark profile {name!r} uses deprecated 'strategy'. "
+                "Use the product RetrievalProfile name as 'name' instead."
+            )
+        profiles.append(ProfileSpec(name=name, params=raw))
 
     return BenchConfig(
         dataset=run.get("dataset"),

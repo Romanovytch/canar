@@ -3,6 +3,9 @@ from __future__ import annotations
 import numpy as np
 import requests
 
+# APOSTROPHE NORMALIZATION WORKAROUND: remove this import and the tagged line
+# in `embed_query` to restore the original embedding request behavior.
+from canar.app.api.text_normalization import normalize_for_embedding
 from canar.app.retrieval.models import SparseVector
 
 
@@ -13,11 +16,17 @@ class EmbedClient:
         self.key = api_key
 
     def embed_query(self, text: str) -> list[float]:
+        # APOSTROPHE NORMALIZATION WORKAROUND: only the HTTP payload is converted;
+        # the original `text` remains unchanged for prompts, logs, and display.
+        embedding_text = normalize_for_embedding(text)
         headers = {"Content-Type": "application/json"}
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
         r = requests.post(
-            self.url, json={"model": self.model, "input": [text]}, headers=headers, timeout=60
+            self.url,
+            json={"model": self.model, "input": [embedding_text]},
+            headers=headers,
+            timeout=60,
         )
         r.raise_for_status()
         v = np.array(r.json()["data"][0]["embedding"], dtype="float32")

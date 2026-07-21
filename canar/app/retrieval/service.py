@@ -138,9 +138,9 @@ class RetrievalService:
         if profile is None:
             raise ValueError(f"Unknown retrieval profile for agent {agent!r}: {profile_name!r}")
 
-        strategy = self.strategies.get(profile.name) or self.strategies.get(profile.strategy)
+        strategy = self.strategies.get(profile.name)
         if strategy is None:
-            raise ValueError(f"Unsupported retrieval strategy: {profile.strategy!r}")
+            raise ValueError(f"Unsupported retrieval profile: {profile.name!r}")
 
         dense_vector = None
         sparse_vector = None
