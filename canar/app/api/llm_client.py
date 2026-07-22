@@ -45,3 +45,26 @@ class ChatClient:
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield delta.content
+
+    def sync_chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        top_p: float = 1.0,
+        max_tokens: int = 2048,
+        allowed_tools_schemas: list[dict] | None = None,
+    ):
+        api_args = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "stream": False,
+            **self.provider_kwargs,
+        }
+        if allowed_tools_schemas:
+            api_args["tools"] = allowed_tools_schemas
+            api_args["tool_choice"] = "auto"
+
+        return  self.client.chat.completions.create(**api_args)

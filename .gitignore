@@ -3,9 +3,11 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+venv/
 .env
 data/
 *.egg-info
 
 # local-only benchmark brought in from a client env; not ready for tracking yet
 benchmark_mini_client/
+logs/

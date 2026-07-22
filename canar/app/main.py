@@ -1,21 +1,84 @@
 from __future__ import annotations
 
-import streamlit as st
+import json
+import mimetypes
+import time
+from pathlib import Path
 
-from canar.app.agents import r_helpdesk, sas_to_r
+import streamlit as st
+from sqlmodel import Session, select
+
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
+
+# from canar.app.bot_tools.registry import ToolRegistry
+from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.config import AppConfig
+from canar.app.profiles import (
+    build_agent_profile_mapping,
+    build_chat_profiles,
+    resolve_chatbot_profiles,
+)
+from canar.app.retrieval.profiles import build_retrieval_profiles
 from canar.app.retrieval.service import RetrievalService
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
+from canar.app.utils.llm_utils import assemble_context, build_universal_messages
+from canar.app.yaml_loader import load_chatbot_on_boot
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
 cfg = AppConfig()
 cfg.validate()
 db = DB(cfg.db_path)
+CHATBOT_CONFIG_PATH = Path(__file__).resolve().parent / "chatbots" / "chatbotconfig.yaml"
+
+
+@st.cache_resource()
+def init_app_agent_data(_db: DB) -> None:
+    mimetypes.add_type("text/x-r-source", ".r")
+    mimetypes.add_type("application/x-sas", ".sas")
+    load_chatbot_on_boot(CHATBOT_CONFIG_PATH, _db)
+
+
+# @st.cache_resource()
+# def init_tool_registry() -> ToolRegistry:
+#     yaml_path = "canar/app/bot_tools/tools_config.yaml"
+#     return load_bot_tools_on_boot(yaml_path)
+
+
+# tool_registry = init_tool_registry()
+
+init_app_agent_data(db)
+
+
+@st.cache_data(ttl=3600)
+def fetch_chatbot_list(_engine) -> list[ChatbotConfig]:
+    with Session(_engine) as session:
+        return session.exec(select(ChatbotConfig)).all()
+
+
+chatbot_list = fetch_chatbot_list(db.engine)
+if not chatbot_list:
+    st.error("Aucun chatbot valide n'est configuré.")
+    st.stop()
+
+retrieval_profiles = build_retrieval_profiles(
+    tuple(cfg.qdrant_collections),
+    dense_vector_name=cfg.qdrant_dense_vector_name,
+    sparse_vector_name=cfg.qdrant_sparse_vector_name,
+)
+chat_profiles = build_chat_profiles(retrieval_profiles)
+try:
+    chatbot_profiles = resolve_chatbot_profiles(chatbot_list, chat_profiles)
+except ValueError as exc:
+    st.error(str(exc))
+    st.stop()
+agent_profiles = build_agent_profile_mapping(chatbot_profiles)
+
+CHATBOTS_BY_ID = {bot.id: bot for bot in chatbot_list}
+DEFAULT_BOT_ID = chatbot_list[0].id
 
 # ---------- Auth (local) ----------
 if "user_id" not in st.session_state:
@@ -37,9 +100,10 @@ def show_auth():
                 st.session_state["user_id"] = uid
                 # Create a starter conversation if none
                 if not db.list_conversations(uid):
-                    cid = db.create_conversation(uid, "Nouvelle conversation", "r_helpdesk")
+                    cid = db.create_conversation(uid, "Nouvelle conversation modif", DEFAULT_BOT_ID)
                     st.session_state["conv_id"] = cid
-                    st.session_state["agent"] = "r_helpdesk"
+                    st.session_state["agent"] = DEFAULT_BOT_ID
+
                 st.rerun()
 
     with tab_signup:
@@ -66,19 +130,26 @@ if "conv_id" not in st.session_state:
         st.session_state["conv_id"] = convs[0].id
         st.session_state["agent"] = convs[0].agent
     else:
-        cid = db.create_conversation(USER_ID, "Nouvelle conversation", "r_helpdesk")
+        cid = db.create_conversation(USER_ID, "Nouvelle conversation", DEFAULT_BOT_ID)
         st.session_state["conv_id"] = cid
-        st.session_state["agent"] = "r_helpdesk"
+        st.session_state["agent"] = DEFAULT_BOT_ID
 
 conv_id: int = st.session_state["conv_id"]
-agent: str = st.session_state.get("agent", "r_helpdesk")
+agent: str = st.session_state.get("agent", DEFAULT_BOT_ID)
+if agent not in CHATBOTS_BY_ID:
+    agent = DEFAULT_BOT_ID
+    st.session_state["agent"] = agent
+current_bot = CHATBOTS_BY_ID[agent]
+current_profile = chatbot_profiles[agent]
+generation_params = current_profile.generation
 
 # Sidebar (conversations + create/rename/delete)
-sidebar(db, USER_ID, conv_id, ["r_helpdesk", "sas_to_r"], agent)
+
+sidebar(db, USER_ID, conv_id, [bot.id for bot in chatbot_list], agent, chatbot_list)
 
 # ---------- Header with current conversation name + agent selector ----------
-AGENT_LABELS = {"r_helpdesk": "Assistant R", "sas_to_r": "Traduction SAS → R"}
-ordered_agents = ["r_helpdesk", "sas_to_r"]
+AGENT_LABELS = {bot.id: bot.name for bot in chatbot_list}
+ordered_agents = [bot.id for bot in chatbot_list]
 
 conv = db.get_conversation(conv_id)
 conv_title = conv.title if conv else "Nouvelle conversation"
@@ -128,7 +199,7 @@ with ctrl_right:
         "Max tokens réponse",
         min_value=256,
         max_value=8192,
-        value=2048,
+        value=generation_params.max_tokens,
         step=256,
         help="Augmente si tu colles de longs extraits de code.",
     )
@@ -136,7 +207,7 @@ with ctrl_right:
         "Température",
         min_value=0.0,
         max_value=1.0,
-        value=0.2,
+        value=generation_params.temperature,
         step=0.05,
         help="Plus élevé = plus créatif.",
     )
@@ -196,20 +267,27 @@ st.markdown(
 chat = ChatClient(
     cfg.llm_base,
     cfg.llm_key,
-    cfg.llm_model,
+    generation_params.model or cfg.llm_model,
     cfg.llm_thinking,
-    cfg.llm_provider_name,
+    cfg.llm_provider_name
 )
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
-retrieval = RetrievalService.from_config(cfg, embed)
+retrieval = RetrievalService.from_config(
+    cfg,
+    embed,
+    profiles=retrieval_profiles,
+    agent_profiles=agent_profiles,
+)
 
 # Show messages
 render_messages(db, USER_ID, conv_id)
 
 # --- Input area + turn handling ---
 sas_code_uploaded = None
-if st.session_state["agent"] == "sas_to_r":
-    uploaded = st.file_uploader("Uploader un fichier .sas (optionnel)", type=["sas"])
+if current_bot.accepted_file_types:
+    uploaded = st.file_uploader(
+        "Uploader un fichier (optionnel)", type=current_bot.accepted_file_types
+    )
     if uploaded is not None:
         sas_code_uploaded = uploaded.read().decode("utf-8", errors="ignore")
 
@@ -222,19 +300,102 @@ if user_input:
     # 2) persist it
     db.add_message(USER_ID, conv_id, "user", user_input)
 
-    # 3) agent-specific logic
-    if st.session_state["agent"] == "sas_to_r":
-        messages = sas_to_r.build_messages(user_input, sas_code_uploaded)
-        gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-        _ = stream_answer(db, USER_ID, conv_id, gen)
+    # Universal agent logic
+    uploaded_file_cont = None
+    if current_bot.accepted_file_types and sas_code_uploaded:
+        uploaded_file_cont = sas_code_uploaded
 
-    else:  # r_helpdesk
-        citations = retrieval.search(st.session_state["agent"], user_input)
-        messages, src_list = r_helpdesk.build_messages(user_input, citations)
-        gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
+    citations = retrieval.search(current_bot.id, user_input)
+    context_text, src_list = assemble_context(citations)
+
+    messages = build_universal_messages(
+        system_prompt=current_bot.system_prompt,
+        user_question=user_input,
+        file_content=uploaded_file_cont,
+        rag_context=context_text,
+    )
+
+    allowed_tools = current_bot.allowed_tools
+
+    # allowed_tools_schemas = asyncio.run(tool_registry.get_all_tools_schemas(allowed_tools))
+
+    if not allowed_tools or len(allowed_tools) == 0:
+        gen = chat.stream_chat(
+            messages,
+            temperature=temperature,
+            top_p=generation_params.top_p,
+            max_tokens=max_tokens,
+        )
+        answer = stream_answer(db, USER_ID, conv_id, gen)
+    else:
+        is_final_answer = False
+        final_text = ""
+
+        MAX_ITERATIONS = 5
+        iteration_count = 0
+
+        with st.status("L'agent analyse la demande...", expanded=True) as status:
+            while not is_final_answer and iteration_count < MAX_ITERATIONS:
+                iteration_count += 1
+
+                response = chat.sync_chat(
+                    messages,
+                    temperature=temperature,
+                    top_p=generation_params.top_p,
+                    max_tokens=max_tokens,
+                    # allowed_tools_schemas=allowed_tools_schemas,
+                )
+
+                llm_msg = response.choices[0].message
+
+                if llm_msg.tool_calls:
+                    messages.append(llm_msg.model_dump(exclude_none=True))
+                    for tool_call in llm_msg.tool_calls:
+                        tool_name = tool_call.function.name
+                        st.write(f"Appel à l'outil {tool_name}...")
+                        try:
+                            tool_args = json.loads(tool_call.function.arguments)
+                            result = None
+                            # asyncio.run(tool_registry.execute_tool(tool_name, tool_args))
+                            st.write("Données récupérées avec succès")
+                        except Exception as e:
+                            result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"
+                            st.write(f"Erreur : {result}")
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": str(result),
+                            }
+                        )
+
+                else:
+                    is_final_answer = True
+                    final_text = llm_msg.content
+                    status.update(label="Réponse générée", state="complete", expanded=False)
+
+            if not is_final_answer:
+                final_text = (
+                    "Désolé, j'ai dû interrompre mes recherches car elles prenaient "
+                    "trop de temps ou tournaient en boucle. "
+                    "Voici un résumé de ce que j'ai trouvé jusque-là..."
+                )
+                status.update(
+                    label="Recherche interrompue (Limite atteinte)",
+                    state="error",
+                    expanded=False,
+                )
+
+        def fake_stream_generator(text):
+            for chunk in text.split(" "):
+                yield chunk + " "
+                time.sleep(0.01)
+
+        gen = fake_stream_generator(final_text)
         answer = stream_answer(db, USER_ID, conv_id, gen)
 
-        # Citations panel
+    # Citations panel
+    if len(src_list):
         with st.expander("Sources"):
             for src in src_list:
                 st.markdown(f"""
@@ -243,19 +404,20 @@ if user_input:
                 _({src["collection"]})_
                 """)
 
+
 # Footer / export for SAS→R
-if st.session_state["agent"] == "sas_to_r":
+if current_bot.export_extension:
     msgs = db.get_messages(USER_ID, conv_id)
     if msgs and msgs[-1].role == "assistant":
-        if st.button("Exporter la dernière réponse en .R"):
+        if st.button(f"Exporter la dernière réponse en .{current_bot.export_extension}"):
             content = msgs[-1].content
             # crude extract code block
             code = content
             if "```r" in content:
                 code = content.split("```r", 1)[1].split("```", 1)[0]
             st.download_button(
-                "Télécharger .R",
+                f"Télécharger .{current_bot.export_extension}",
                 data=code.encode("utf-8"),
-                file_name="translation.R",
-                mime="text/x-r-source",
+                file_name=f"export.{current_bot.export_extension}",
+                mime=current_bot.exporte_mime_type,
             )

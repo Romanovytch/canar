@@ -5,7 +5,7 @@ retrieves and generates, RAGAS judges. No replicated pipeline code.
 
 ```
 AgoRa ingest ──> Qdrant `utilitr_v1` ──> CanaR (RetrievalService.search
-                                          → r_helpdesk prompt → ChatClient)
+                                          → YAML prompt → ChatClient)
                                                       │
                                                       ▼
                                        RAGAS + retrieval metrics
@@ -13,12 +13,12 @@ AgoRa ingest ──> Qdrant `utilitr_v1` ──> CanaR (RetrievalService.search
 
 The script imports `canar.app.retrieval.service.RetrievalService` (Julien's
 modular retrieval), `canar.app.api.{embed_client,llm_client}`,
-`canar.app.agents.r_helpdesk` and `canar.app.config.AppConfig` — the same
-call chain as the r_helpdesk branch of `canar/app/main.py`
-(`retrieval.search(agent, q)` → `build_messages` → `stream_chat`). Config
-comes from `canar/.env`, the same file the app reads. `top_k`, the source
-filter and score-threshold pruning come from the retrieval profile
-(`canar/app/retrieval/profiles.py`).
+`canar.app.utils.llm_utils` and `canar.app.config.AppConfig` — the same
+retrieval, typed-context, and universal-message chain as `canar/app/main.py`.
+`run.agent` selects the chatbot id from `chatbotconfig.yaml`; its prompt and
+attached chat profile provide generation settings. Config also comes from
+`canar/.env`, the same file the app reads. Retrieval settings come from the
+selected `RetrievalProfile` (`canar/app/retrieval/profiles.py`).
 
 **Dataset:** reuses `../datasets/utilitr_questions.csv` —
 12 French questions whose references reproduce the official
@@ -73,7 +73,8 @@ Each run lands in a timestamped folder under `e2e/results/` (gitignored):
 **Knobs** (env vars / top of `eval_e2e.py`):
 - `--config PATH` (default `config.yaml`) — benchmark run/dataset/profile YAML.
 - `--retrieval-k N` — positive cutoff for retrieval metrics; default: all returned results.
-- `GEN_MAX_TOKENS` (default 8192) — generation cap. The product model
+- `GEN_MAX_TOKENS` — generation cap. The current benchmark config sets 8192;
+  when neither env nor `run.gen_max_tokens` is set, the chatbot profile supplies it. The product model
   (`qwen3.5`) is a *reasoning* model: it burns a hidden token budget thinking
   before it answers, so the app's default 2048 returns **empty** answers
   (`finish_reason=length`) on many questions. Keep this high. *(This is also a
@@ -90,6 +91,9 @@ Each run lands in a timestamped folder under `e2e/results/` (gitignored):
 
 Retrieval knobs (`top_k`, source filter, pruning) live in the retrieval
 profile, so the benchmark always matches the app's real settings.
+An empty `profiles` matrix uses the chatbot's attached retrieval profile;
+explicit rows override retrieval only and retain that chatbot's prompt and
+generation settings.
 
 ## Comparing the three benchmarks
 

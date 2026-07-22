@@ -27,7 +27,8 @@ benchmark/
 ## What it measures
 
 `e2e/eval_e2e.py` imports `canar.app.*` and calls the exact chain the Streamlit
-app runs, so a bad score is a real product problem. It drives the product's
+app runs, including its YAML prompt and universal message builder, so a bad
+score is a real product problem. It drives the product's
 retrieval strategies — `simple_vector` (dense), `simple_sparse` (BM25) and
 `hybrid` (the two fused) — over the dataset and compares them side by side. See
 [e2e/README.md](e2e/README.md).

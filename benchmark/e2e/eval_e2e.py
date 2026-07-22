@@ -7,19 +7,21 @@ actual modules, against the collection that AgoRa actually built:
 
     AgoRa ingest  ->  Qdrant `utilitr_v1`  ->  CanaR retrieval + generation  ->  RAGAS
 
-Mapping to the CanaR chat UI (canar/app/main.py, r_helpdesk branch),
+Mapping to the CanaR chat UI (canar/app/main.py),
 using Julien's modular retrieval (canar/app/retrieval/):
 
     UI step (main.py)                              | here
     -----------------------------------------------|------------------------------
     retrieval = RetrievalService.from_config(...)  | same service, same profile
     citations = retrieval.search(agent, q)         | same call (embeds + retrieves)
-    messages = r_helpdesk.build_messages(q, cits)  | same call, same CoachR prompt
+    context = assemble_context(citations)           | same typed-hit conversion
+    messages = build_universal_messages(...)        | same YAML prompt/message flow
     chat.stream_chat(messages)                     | same call, stream joined
 
-So a score here measures the product, not a replica. The retrieval profiles to
-run (top_k, score_threshold, ...) come from benchmark/config.yaml; the dataset
-is run once per profile so strategies can be compared side by side.
+So a score here measures the product, not a replica. Named retrieval profiles
+come from benchmark/config.yaml; their parameters remain those of the product
+profile. The dataset is run once per profile so strategies can be compared side
+by side.
 
 Prerequisite — the collection must have been built by AgoRa (its payload
 carries the `source` field CanaR filters on; a hand-rolled ingest won't match):
@@ -47,9 +49,9 @@ from qdrant_client import QdrantClient
 from ragas.metrics import Faithfulness, ResponseRelevancy
 from ragas.run_config import RunConfig
 
-HERE = Path(__file__).parent                  # benchmark/e2e/
-BENCH_DIR = HERE.parent                      # benchmark/
-REPO_ROOT = HERE.parent.parent                # the canar repo root
+HERE = Path(__file__).parent  # benchmark/e2e/
+BENCH_DIR = HERE.parent  # benchmark/
+REPO_ROOT = HERE.parent.parent  # the canar repo root
 
 # Make the canar package importable without installing it into this venv.
 # (When this becomes a feature in dev, `pip install -e .` does the same job.)
@@ -71,7 +73,7 @@ load_dotenv(REPO_ROOT / ".env", override=False)
 
 # CanaR's real modules — the exact code the Streamlit app runs.
 # Importing AppConfig also loads canar/.env (LLM, embeddings, Qdrant, collections).
-from bench_config import load_config  # noqa: E402
+from bench_config import load_chatbot, load_config, select_profile_specs  # noqa: E402
 
 # APOSTROPHE NORMALIZATION WORKAROUND: remove this import and unwrap
 # `judge_embeddings` below to restore direct RAGAS OpenAIEmbeddings usage.
@@ -81,7 +83,6 @@ from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
 from token_counter import TokenCounter, summarize_token_usage  # noqa: E402
 
-from canar.app.agents import generic_agent  # noqa: E402
 from canar.app.api.embed_client import EmbedClient, FastEmbedClient  # noqa: E402
 from canar.app.api.llm_client import ChatClient  # noqa: E402
 from canar.app.api.llm_provider import (  # noqa: E402
@@ -89,8 +90,10 @@ from canar.app.api.llm_provider import (  # noqa: E402
     resolve_llm_base_url,
 )
 from canar.app.config import AppConfig  # noqa: E402
+from canar.app.profiles import build_chat_profiles  # noqa: E402
 from canar.app.retrieval.profiles import build_retrieval_profiles  # noqa: E402
 from canar.app.retrieval.service import RetrievalService  # noqa: E402
+from canar.app.utils.llm_utils import assemble_context, build_universal_messages  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config — product settings from canar/.env; benchmark settings from config.yaml.
@@ -102,19 +105,54 @@ cfg.validate()
 BENCH = load_config(ARGS.config)
 RETRIEVAL_K = ARGS.retrieval_k
 
+# Build the same retrieval/profile registries as the app, but project just the
+# benchmark-facing chatbot fields directly from YAML (no application database).
+profiles = build_retrieval_profiles(
+    tuple(cfg.qdrant_collections),
+    dense_vector_name=cfg.qdrant_dense_vector_name,
+    sparse_vector_name=cfg.qdrant_sparse_vector_name,
+)
+chat_profiles = build_chat_profiles(profiles)
+CHATBOT_CONFIG_PATH = REPO_ROOT / "canar" / "app" / "chatbots" / "chatbotconfig.yaml"
+try:
+    CHATBOT = load_chatbot(CHATBOT_CONFIG_PATH, BENCH.agent)
+except ValueError as exc:
+    sys.exit(f"Invalid benchmark chatbot configuration: {exc}")
+try:
+    CHAT_PROFILE = chat_profiles[CHATBOT.profile_name]
+except KeyError:
+    sys.exit(
+        f"Invalid benchmark chatbot configuration: unknown profile "
+        f"{CHATBOT.profile_name!r} for chatbot {CHATBOT.id!r}."
+    )
+try:
+    BENCH_PROFILES = select_profile_specs(
+        BENCH.profiles,
+        CHAT_PROFILE.retrieval.name if CHAT_PROFILE.retrieval is not None else None,
+    )
+except ValueError as exc:
+    sys.exit(f"Invalid benchmark chatbot configuration: {exc}")
+
+GENERATION = CHAT_PROFILE.generation
+GENERATION_MODEL = GENERATION.model or cfg.llm_model
+
 DATASET = DatasetSpec(
-    path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
-    limit=BENCH.limit,                # null in YAML = all questions
+    path=BENCH_DIR / BENCH.dataset,  # CSV or YAML — format detected from extension
+    limit=BENCH.limit,  # null in YAML = all questions
 )
 
 # Generation budget. qwen3.5 is a *reasoning* model: it spends a hidden token
 # budget "thinking" before answering, so the app's default max_tokens=2048 runs
-# out mid-thought and returns EMPTY answers. Keep high. Env overrides YAML.
-GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", BENCH.gen_max_tokens))
+# out mid-thought and returns EMPTY answers. Env and benchmark YAML can override
+# the selected chatbot profile for a benchmark run.
+_profile_gen_max_tokens = (
+    BENCH.gen_max_tokens if BENCH.gen_max_tokens is not None else GENERATION.max_tokens
+)
+GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", _profile_gen_max_tokens))
 
 # RAGAS judge — may differ from the product LLM. A non-reasoning model
 # (qwen2.5:7b) avoids the timeouts of the reasoning 9B. Priority: env > YAML > product.
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_model
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or GENERATION_MODEL
 
 # Optional resource benchmark (CPU/memory/GPU per phase). Off by default; when on
 # it adds a tiny sampler thread per phase. Priority: env > YAML. Turn on with
@@ -142,9 +180,15 @@ def _git_commit() -> str:
 # what makes results comparable across machines despite per-developer configs.
 PROVENANCE = {
     "benchmark_config": str(ARGS.config),
+    "chatbot": CHATBOT.id,
+    "chatbot_profile": CHAT_PROFILE.name,
     "retrieval_k": RETRIEVAL_K if RETRIEVAL_K is not None else "all_retrieved",
     "embed_model": cfg.embed_model,
     "collection": ",".join(cfg.qdrant_collections),
+    "generation_model": GENERATION_MODEL,
+    "generation_temperature": GENERATION.temperature,
+    "generation_top_p": GENERATION.top_p,
+    "generation_max_tokens": GEN_MAX_TOKENS,
     "judge_model": JUDGE_MODEL,
     "git_commit": _git_commit(),
 }
@@ -170,18 +214,6 @@ token_counter = TokenCounter(os.environ.get("BENCH_TOKENIZER"))
 # Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
 # FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
 sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_sparse_model else None
-
-# The product's retrieval service builds the real profiles exactly as the app
-# does — simple_vector (dense), simple_sparse (BM25), hybrid (dense + sparse
-# fused), and profile-level additions such as rerank. Benchmark labels may be
-# shorter than product profile names (e.g. "dense" -> "simple_vector"), so resolve
-# each configured row to the real RetrievalProfile before constructing the
-# service. That lets rerank profiles be discovered at service construction time.
-profiles = build_retrieval_profiles(
-    tuple(cfg.qdrant_collections),
-    dense_vector_name=cfg.qdrant_dense_vector_name,
-    sparse_vector_name=cfg.qdrant_sparse_vector_name,
-)
 
 
 def resolve_profile(spec):
@@ -237,17 +269,14 @@ SPARSE_PROFILE_NAMES = {
 
 
 def profile_needs_dense(profile) -> bool:
-    return profile.name in DENSE_PROFILE_NAMES
+    return profile.dense is not None
 
 
 def profile_needs_sparse(profile) -> bool:
-    return profile.name in SPARSE_PROFILE_NAMES
+    return profile.sparse is not None
 
 
-BENCH_AGENT_PROFILES = {
-    f"benchmark:{spec.name}": spec.name
-    for spec in BENCH.profiles
-}
+BENCH_AGENT_PROFILES = {f"benchmark:{spec.name}": spec.name for spec in BENCH_PROFILES}
 
 service = RetrievalService.from_config(
     cfg,
@@ -375,8 +404,8 @@ def preflight() -> None:
                 "profile. Re-ingest with the AgoRa parent ingestion (see SETUP.md)."
             )
         params = client.get_collection(col).config.params
-        vectors_cfg = params.vectors                 # dict (named) or single config
-        sparse_cfg = params.sparse_vectors or {}     # dict of named sparse vectors
+        vectors_cfg = params.vectors  # dict (named) or single config
+        sparse_cfg = params.sparse_vectors or {}  # dict of named sparse vectors
 
         if need["dense"]:
             # The dense vector must exist (by name on multi-vector collections) and
@@ -429,8 +458,10 @@ def build_searcher(spec):
         )
     strategy = service.strategies.get(profile.name)
     if strategy is None:
-        sys.exit(f"Profile {profile_name!r} is not available in RetrievalService strategies "
-                 f"(have: {list(service.strategies)}).")
+        sys.exit(
+            f"Profile {profile_name!r} is not available in RetrievalService strategies "
+            f"(have: {list(service.strategies)})."
+        )
 
     needs_sparse = profile_needs_sparse(profile)
     if needs_sparse and sparse_embed is None:
@@ -466,11 +497,16 @@ def make_pipeline(search):
         # retrieve (timed for the Latency metric; resource-probed when enabled)
         with probe(MEASURE_RESOURCES) as r_usage:
             t0 = time.perf_counter()
-            citations = search(question)              # list[RetrievalHit]
+            citations = search(question)  # list[RetrievalHit]
             retrieval_latency_s = time.perf_counter() - t0
 
-        # build the exact prompt the app sends (CoachR system prompt + [S1].. context)
-        messages, _src_list = generic_agent.build_messages(question, citations)
+        # Build the exact YAML-prompt + universal-message flow used by the app.
+        context_text, _src_list = assemble_context(citations)
+        messages = build_universal_messages(
+            system_prompt=CHATBOT.system_prompt,
+            user_question=question,
+            rag_context=context_text or None,
+        )
 
         # generate with CanaR's ChatClient (the app streams; we join the stream).
         # max_tokens generous so the reasoning model finishes thinking AND answers.
@@ -478,7 +514,12 @@ def make_pipeline(search):
         with probe(MEASURE_RESOURCES) as g_usage:
             t1 = time.perf_counter()
             answer = "".join(
-                chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
+                chat.stream_chat(
+                    messages,
+                    temperature=GENERATION.temperature,
+                    top_p=GENERATION.top_p,
+                    max_tokens=GEN_MAX_TOKENS,
+                )
             )
             generation_latency_s = time.perf_counter() - t1
         # The reasoning model can spend its whole budget "thinking" and return an
@@ -524,14 +565,17 @@ def make_pipeline(search):
 
 def main() -> None:
     preflight()
-    print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}")
+    print(
+        f"Chatbot: {CHATBOT.id} ({CHAT_PROFILE.name}) | "
+        f"profiles to benchmark: {[p.name for p in BENCH_PROFILES]} | judge: {JUDGE_MODEL}"
+    )
     print(f"Provenance: {PROVENANCE}\n")
 
     # One folder per benchmark run; each strategy gets a subfolder inside it.
     run_dir = HERE / "results" / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     summaries = []
-    for spec in BENCH.profiles:
+    for spec in BENCH_PROFILES:
         df = run_benchmark(
             name=f"E2E [{spec.name}] (real CanaR + AgoRa pipeline)",
             dataset=DATASET,
@@ -548,7 +592,7 @@ def main() -> None:
             # score means, so each CSV records what produced it.
             tag={"profile": spec.name, **PROVENANCE},
             file_label=spec.name,
-            group_dir=run_dir,            # all strategies of this run share run_dir
+            group_dir=run_dir,  # all strategies of this run share run_dir
         )
         summaries.append((spec.name, df))
 
@@ -557,16 +601,22 @@ def main() -> None:
     # self-contained artifact.
     if summaries:
         # Means of the quality/latency/resource metrics, one row per profile.
-        cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
-                "retrieval_latency_s", "generation_latency_s",
-                "retrieval_cpu_s", "peak_rss_mb",
-                "faithfulness", "answer_relevancy"]
+        cols = [
+            "hit_rate",
+            "mrr",
+            "recall",
+            "precision",
+            "ndcg",
+            "retrieval_latency_s",
+            "generation_latency_s",
+            "retrieval_cpu_s",
+            "peak_rss_mb",
+            "faithfulness",
+            "answer_relevancy",
+        ]
         rows = []
         for name, df in summaries:
-            has_error = (
-                "pipeline_status" in df.columns
-                and (df["pipeline_status"] == "ERROR").any()
-            )
+            has_error = "pipeline_status" in df.columns and (df["pipeline_status"] == "ERROR").any()
             row = {"profile": name}
             if has_error:
                 errors = df.loc[df["pipeline_status"] == "ERROR", "pipeline_error"]
@@ -576,8 +626,13 @@ def main() -> None:
             else:
                 row["pipeline_status"] = "OK"
                 row["pipeline_error"] = ""
-                row.update({c: round(pd.to_numeric(df[c], errors="coerce").mean(), 3)
-                            for c in cols if c in df.columns})
+                row.update(
+                    {
+                        c: round(pd.to_numeric(df[c], errors="coerce").mean(), 3)
+                        for c in cols
+                        if c in df.columns
+                    }
+                )
             rows.append(row)
         comparison = pd.DataFrame(rows)
 

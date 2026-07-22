@@ -8,7 +8,7 @@ It has three sections:
 ```yaml
 run:                         # how the benchmark runs
   dataset: datasets/utilitr_questions.csv   # CSV or YAML
-  agent: r_helpdesk
+  agent: r_helpdesk          # chatbot id from app/chatbots/chatbotconfig.yaml
   limit: null                # null = all questions; int = quick subset
   judge_model: gemma3:12b    # RAGAS judge; null = use the product LLM
   gen_max_tokens: 8192       # generation budget (see note below)
@@ -20,17 +20,13 @@ environment:                 # expected env; preflight aborts if canar/.env diff
 
 profiles:                    # retrieval strategies to compare
   - name: simple_vector
-    top_k: 5
-    score_threshold: 0.35
-    source_filter: utilitr
-    fallback_top_k: 3
   - name: simple_vector_parent_child
-    top_k: 10
-    score_threshold: 0.20
 ```
 
 ## How it works
 
+- `run.agent` selects the YAML chatbot. Its system prompt and attached chat
+  profile supply generation settings for every row in the run.
 - The dataset is run **once per profile**. Every result row is tagged with the
   `profile` name and provenance (embed model, collection, judge, git commit).
 - Each profile writes its own folder under `e2e/results/`, containing
@@ -42,6 +38,12 @@ profiles:                    # retrieval strategies to compare
   `canar/app/retrieval/profiles.py`. The benchmark runs the product's real
   profile, so `simple_vector` measures the exact profile the service knows by
   that name.
+- Extra keys on a profile row are still parsed for configuration compatibility,
+  but the E2E runner does not apply them. Define a named product profile when a
+  benchmark needs different retrieval parameters.
+- If `profiles` is empty, the benchmark uses the retrieval profile attached to
+  the selected chatbot. An explicit matrix overrides retrieval only; the YAML
+  prompt and attached generation settings remain unchanged.
 
 ## The `environment` block
 
@@ -52,11 +54,10 @@ machines, even though each developer has their own `.env` and Qdrant.
 
 ## Profiles vs. the product
 
-This is the benchmark's own config — it is **not** the product loading profiles
-from YAML (that's a separate CanaR ticket). Here we sweep the same knobs to
-answer the project's central question: *which retrieval strategy works best for
-which kind of question?* If the product later adopts a YAML profile format, the
-schema is intentionally the same, so a profile can be shared.
+The benchmark matrix selects product `RetrievalProfile` names so we can answer
+the project's central question: *which retrieval strategy works best for which
+kind of question?* Chatbot identity, prompt, and attached generation settings
+come from the same YAML/profile flow as the application.
 
 ## Token usage (always measured)
 

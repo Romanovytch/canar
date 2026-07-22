@@ -3,17 +3,17 @@
 # `run`         — how the benchmark runs (dataset, judge, generation budget).
 # `environment` — the embed model + collection a run is meant to use; preflight
 #                 aborts if canar/.env differs, so results stay comparable.
-# `profiles`    - which product retrieval profiles to compare. Each name must
-#                 match a RetrievalProfile from canar/app/retrieval/profiles.py.
-#                 The benchmark runs the dataset once per profile and tags every
-#                 row with that same product profile name.
+# `profiles`    - optional product retrieval profiles to compare. When empty,
+#                 the benchmark uses the profile attached to `run.agent`.
+#                 Explicit rows override retrieval only; prompt and generation
+#                 still come from the selected chatbot profile.
 #
 # Env vars override the matching `run` keys: JUDGE_MODEL, GEN_MAX_TOKENS,
 # MEASURE_RESOURCES.
 
 run:
   dataset: datasets/benchmark_dicovarg21_v0.yaml   # path relative to benchmark/
-  agent: generic_agent
+  agent: r_helpdesk
   limit: null                  # null = all 12 questions; set an int for a quick pass
   judge_model: gemma3:12b      # non-reasoning judge; qwen2.5:7b returned the wrong JSON schema
   gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers

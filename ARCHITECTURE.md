@@ -5,7 +5,7 @@
 
 ## Overview
 
-CanaR is a Streamlit-based chat UI that authenticates users, persists conversations and messages in a database, and routes each user turn to an LLM-backed agent. The `r_helpdesk` agent augments responses with a modular retrieval service, while `sas_to_r` is prompt-only. Both agents stream LLM output token-by-token back into the UI.
+CanaR is a Streamlit-based chat UI that authenticates users, persists conversations and messages, and routes each turn to a YAML-defined chatbot. YAML supplies chatbot identity, display metadata, system prompts, file types, and export behavior. The `r_helpdesk` chatbot augments responses with the modular retrieval service, while `sas_to_r` is prompt-only. Both stream LLM output token-by-token back into the UI.
 
 Retrieval is strategy-based. Implemented strategies cover dense, sparse, and hybrid retrieval, with optional parent expansion and reranking. Qdrant-specific code is isolated behind a project-owned adapter, and high-level code consumes typed project-owned retrieval objects.
 
@@ -15,18 +15,22 @@ Retrieval is strategy-based. Implemented strategies cover dense, sparse, and hyb
 canar/
   app/
     main.py                  Streamlit entrypoint and chat flow
+    profiles.py              Chat profiles combining retrieval and generation settings
     state.py                 SQLModel DB for users, conversations, messages
     config.py                Runtime config from environment variables
     api/
       embed_client.py        OpenAI-compatible embedding client
       llm_client.py          OpenAI-compatible chat client
       retrieval.py           Backward-compatible wrapper for old search_qdrant callers
-    agents/
-      r_helpdesk.py          Retrieval-grounded French prompt assembly
-      sas_to_r.py            Prompt-only SAS-to-R translation prompt assembly
+    chatbots/
+      chatbot_config.py      Persisted, validated YAML chatbot schema
+      chatbotconfig.yaml     Runtime chatbot definitions and system prompts
+    yaml_loader.py           Atomic chatbot configuration loader/updater
+    utils/
+      llm_utils.py           RetrievalHit context and universal message assembly
     retrieval/
       models.py              RetrievalProfile, RetrievalQuery, RetrievalHit
-      profiles.py            Python profile registry and agent-to-profile mapping
+      profiles.py            Python retrieval profile registry and legacy agent mapping
       service.py             RetrievalService orchestration
       adapters/
         qdrant.py            Qdrant-only adapter/client code
@@ -47,11 +51,12 @@ canar/
 
 1. User submits a turn via `st.chat_input`, and the UI immediately renders it.
 2. The message is persisted to the DB with `DB.add_message`.
-3. Agent routing happens based on `st.session_state["agent"]`.
-4. For `sas_to_r`, `sas_to_r.build_messages` assembles the prompt, then `ChatClient.stream_chat` streams the answer.
-5. For `r_helpdesk`, `RetrievalService.search(agent, query)` selects the agent retrieval profile, embeds the query, executes the configured retrieval strategy, and returns `list[RetrievalHit]`.
-6. `r_helpdesk.build_messages` assembles context from `RetrievalHit` objects and returns both LLM messages and source metadata for the UI.
-7. The response stream is rendered token-by-token and saved to the DB.
+3. Chatbot routing happens from `st.session_state["agent"]` to the YAML-backed `ChatbotConfig` row.
+4. `ChatbotConfig.profile_name` resolves a `ChatProfile`, which combines one optional `RetrievalProfile` with generation parameters.
+5. `RetrievalService.search(agent, query)` uses the retrieval part of that profile. It returns an empty list without embedding for `prompt_only` chatbots such as `sas_to_r`.
+6. `llm_utils.assemble_context` converts `list[RetrievalHit]` into cited context and UI source metadata.
+7. The single `llm_utils.build_universal_messages` path combines the YAML system prompt, user question, optional uploaded file, and optional retrieval context.
+8. `ChatClient.stream_chat` produces the response, which is rendered token-by-token and saved to the DB.
 
 ## Conversation state management
 
@@ -63,31 +68,51 @@ canar/
 | Session / user identity | `st.session_state["user_id"]` plus `Conversation.user_id` to scope access |
 | Agent selection | `st.session_state["agent"]` and the conversation `agent` field |
 
+`profile_name` is a new nullable column on the persisted `chatbotconfig` table. SQLModel's
+`create_all()` does not add columns to an existing table, so deployments with an existing
+database must apply `ALTER TABLE chatbotconfig ADD COLUMN profile_name VARCHAR` before the
+first startup; the YAML boot load then fills the value for configured chatbots.
+
 ## Retrieval architecture
 
-Retrieval is split into five layers:
+Retrieval is split into six layers:
 
 1. Application orchestration: `canar/app/main.py` calls `RetrievalService.search(...)`.
-2. Retrieval service: `canar/app/retrieval/service.py` maps the active agent to a profile, embeds the query, and dispatches to a strategy.
-3. Profile config: `canar/app/retrieval/profiles.py` defines simple Python profile objects and agent-to-profile mapping.
-4. Strategy implementation: modules under `canar/app/retrieval/strategies/` own dense, sparse, and hybrid behavior such as per-collection normalization, sorting, pruning, and fusion.
-5. Backend adapter: `canar/app/retrieval/adapters/qdrant.py` owns Qdrant client calls, filters, named vector selection, and payload-to-`RetrievalHit` conversion.
+2. Chat profile resolution: `canar/app/profiles.py` validates each YAML `profile_name` and separates generation settings from the optional retrieval profile.
+3. Retrieval service: `canar/app/retrieval/service.py` maps the active chatbot to its resolved retrieval profile, embeds the query, and dispatches to a strategy.
+4. Retrieval config: `canar/app/retrieval/profiles.py` defines the Python retrieval profile registry and the legacy agent mapping used by non-YAML callers.
+5. Strategy implementation: modules under `canar/app/retrieval/strategies/` own dense, sparse, and hybrid behavior such as per-collection normalization, sorting, pruning, and fusion.
+6. Backend adapter: `canar/app/retrieval/adapters/qdrant.py` owns Qdrant client calls, filters, named vector selection, and payload-to-`RetrievalHit` conversion.
 
 The old `canar/app/api/retrieval.py::search_qdrant` function remains as a compatibility wrapper. New application code should use `RetrievalService`.
 
-## Retrieval profiles
+## Chat and retrieval profiles
 
-Profiles are configured in Python, not YAML/TOML/env files. The active profile is selected by agent.
+Profiles are configured in Python. YAML stores only the `profile_name` attached to each chatbot.
+`canar/app/profiles.py::ChatProfile` owns both the generation parameters and an optional
+`RetrievalProfile`. `prompt_only` is the profile for chatbots that must not retrieve documents.
+`build_chat_profiles()` accepts per-profile `GenerationParams` overrides for model,
+temperature, top-p, and maximum response tokens.
+At startup `main.py` validates every YAML reference, derives the chatbot-to-retrieval mapping,
+and passes that mapping to `RetrievalService` before reranker construction.
 
-Current mapping:
+The `ChatbotConfig` fields `collections`, `top_k`, `score_threshold`, and
+`max_context_tokens` are retained for compatibility with PR #24, but they do not
+override runtime retrieval. Collections and ranking limits remain owned by the selected
+Python `RetrievalProfile`. The YAML `model` field is likewise compatibility metadata.
+Generation uses the selected `ChatProfile`; a null profile model falls back to `LLM_MODEL`,
+and the Streamlit temperature and token controls are explicit per-turn overrides of the
+profile defaults.
 
-```python
-AGENT_RETRIEVAL_PROFILES = {
-    "generic_agent": "hybrid_summary",
-    "r_helpdesk": "simple_vector",
-    "sas_to_r": None,
-}
+Current YAML mapping:
+
+```yaml
+r_helpdesk: simple_vector
+sas_to_r: prompt_only
 ```
+
+`AGENT_RETRIEVAL_PROFILES` remains only as a backward-compatible default for callers that
+construct `RetrievalService` without the YAML-derived mapping.
 
 Root retrieval defaults are shared by dense and sparse strategies:
 
@@ -335,27 +360,25 @@ limits and required blocks during construction: `simple_vector` requires `dense`
 `fusion`. Reranking is supported only for hybrid profiles. Legacy flat fields,
 string-based fusion configuration, and trivial `*_params()` accessors are not supported.
 
-Agents and UI code must not depend on Qdrant result objects, Qdrant filters, payload response types, or SDK-specific classes.
+Chatbot configuration, message assembly, and UI code must not depend on Qdrant result objects, Qdrant filters, payload response types, or SDK-specific classes.
 
 ## Prompt assembly
 
-Logical template for `r_helpdesk`:
+System prompts are loaded from `chatbots/chatbotconfig.yaml`. Every chatbot uses the
+same universal message builder.
+
+Logical template with retrieval context:
 
 ```text
-[system prompt: SYSTEM_PROMPT_FR]
-[user message: "Question: {query}\n\nContexte (extraits documentaires):\n{context_text}\n\nConsigne: ..."]
+[system prompt: ChatbotConfig.system_prompt]
+[user message: "Demande utilisateur: {query}\n\n--- FICHIER JOINT --- ... (optional)\n\n--- CONTEXTE DOCUMENTAIRE --- {context_text} ... (optional)"]
 ```
 
-`r_helpdesk.assemble_context` accepts `list[RetrievalHit]`, enumerates citations as `[S1]`, `[S2]`, etc., and returns `src_list` for the UI sources panel. Conversation history is not injected into the prompt in the current code path.
-
-Logical template for `sas_to_r`:
-
-```text
-[system prompt: SYSTEM_PROMPT_FR]
-[user message: either "Voici le code SAS..." or "Demande utilisateur ..."]
-```
-
-No retrieval context or history is added for this agent.
+`llm_utils.assemble_context` accepts `list[RetrievalHit]`, prefers
+`generation_text` when present, enumerates citations as `[S1]`, `[S2]`, and returns
+source metadata for the UI. For prompt-only chatbots the service returns no hits, so
+the universal builder omits the documentary context block. Conversation history is not
+injected into the prompt in the current code path.
 
 ## LLM and embedding integration
 
@@ -407,6 +430,7 @@ No retrieval context or history is added for this agent.
 
 - Use Streamlit as the only application entrypoint, with chat events driven by `st.chat_input` rather than HTTP routes.
 - Store conversations and messages in a relational DB keyed by user ID, with a per-conversation agent field.
+- Load chatbot identity, prompts, upload types, and export behavior from YAML at startup.
 - Select retrieval profile by agent using Python config in `canar/app/retrieval/profiles.py`.
 - Keep `simple_vector` as the default retrieval strategy for now.
 - Keep shared retrieval policy at the profile root and allow dense/sparse blocks to override only retriever-specific values.
@@ -414,8 +438,8 @@ No retrieval context or history is added for this agent.
   Nested fusion/rerank values override the root output default only when needed.
 - Generate parent-child and reranker variants from canonical profiles with `dataclasses.replace`.
 - Keep Qdrant-specific imports and SDK calls in `canar/app/retrieval/adapters/qdrant.py`.
-- Return `RetrievalHit` objects from retrieval code; do not pass Qdrant objects or Qdrant-shaped payload dicts into agents.
-- Keep prompts per agent and do not inject conversation history into LLM messages in the current flow.
+- Return `RetrievalHit` objects from retrieval code; do not pass Qdrant objects or Qdrant-shaped payload dictionaries into prompt assembly.
+- Keep prompts in YAML and centralize prompt/context assembly in `utils/llm_utils.py`; do not inject conversation history in the current flow.
 
 ## Dependency isolation
 
@@ -423,7 +447,7 @@ When implementing features that rely on an external library, SDK, API client, or
 
 Rules:
 
-- Do not call external SDKs directly from Streamlit UI code, agents, or prompt assembly code.
+- Do not call external SDKs directly from Streamlit UI or prompt assembly code.
 - Wrap external libraries in project-owned modules such as `canar/app/retrieval/adapters/qdrant.py`, `canar/app/api/llm_client.py`, or `canar/app/api/embed_client.py`.
 - Keep service-specific types, payloads, filters, and response formats inside the adapter layer.
 - Return typed project-owned data structures such as `RetrievalHit` from adapters and strategies.
