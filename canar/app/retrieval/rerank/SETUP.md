@@ -159,7 +159,7 @@ Use BGE first. Rerank is configured in the retrieval profile, not in `.env`:
 ```python
 rerank=RerankRetrievalParams(
     output_top_k=5,
-    reranker_name="bge-v2-m3",
+    model="bge-v2-m3",
     device="auto",
     max_length=8192,
 )
@@ -267,7 +267,7 @@ python canar/app/retrieval/rerank/compare/compare.py \
 ```
 
 This only changes the returned/printed reranker output count. It does not
-increase the hybrid candidate pool; that is controlled by `fusion.output_top_k`
+increase the hybrid candidate pool; that is controlled by the resolved fusion `output_top_k`
 on the selected rerank profile.
 
 Override the collection:
@@ -277,5 +277,3 @@ python canar/app/retrieval/rerank/compare/compare.py \
   "comment filtrer un dataframe en R ?" \
   --collection utilitr_bgem3_ds
 ```
-
-

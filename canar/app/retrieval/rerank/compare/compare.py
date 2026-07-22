@@ -14,6 +14,8 @@ from canar.app.retrieval.service import RetrievalService
 DEFAULT_COLLECTION = "utilitr_bgem3_ds"
 
 DEFAULT_QDRANT_URL = "http://localhost:6360"
+
+
 def build_profiles(
     cfg: AppConfig,
     *,
@@ -27,7 +29,7 @@ def build_profiles(
         sparse_vector_name=cfg.qdrant_sparse_vector_name or None,
     )
     template = profiles["hybrid_rerank_bge"]
-    params = template.rerank_params()
+    params = template.rerank
     assert params is not None
     profile_name = f"compare_hybrid_rerank_{reranker_name}"
     profiles[profile_name] = replace(
@@ -35,7 +37,7 @@ def build_profiles(
         name=profile_name,
         rerank=replace(
             params,
-            reranker_name=reranker_name,
+            model=reranker_name,
             output_top_k=top_k if top_k is not None else params.output_top_k,
             device=device if device is not None else params.device,
         ),
@@ -59,9 +61,7 @@ def build_service(
         top_k=top_k,
         device=device,
     )
-    profile_name = (
-        f"compare_hybrid_rerank_{reranker_name}" if use_rerank else "hybrid"
-    )
+    profile_name = f"compare_hybrid_rerank_{reranker_name}" if use_rerank else "hybrid"
     return RetrievalService.from_config(
         cfg,
         embed_client=embed_client,
@@ -124,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         "--top-k",
         type=int,
         default=None,
-        help="Override the reranker output count; fusion.output_top_k controls candidates.",
+        help="Override rerank output count; profile.output_top_k controls candidates.",
     )
     parser.add_argument("--device", default=None, help="Override the profile rerank device.")
     parser.add_argument("--max-chars", type=int, default=280, help="Max text chars per hit.")
@@ -147,7 +147,7 @@ def main() -> None:
     print(f"collection={args.collection}")
     print(f"sparse_model={cfg.fastembed_sparse_model}")
     print(f"rerank_device={args.device or 'profile default'}")
-    print(f"output_top_k={args.top_k or 'profile default'}")
+    print(f"rerank_output_top_k={args.top_k or 'profile default'}")
 
     hybrid_service = build_service(cfg, agent=args.agent, use_rerank=False)
     hybrid_hits = hybrid_service.search(args.agent, args.query)

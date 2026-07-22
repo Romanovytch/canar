@@ -15,15 +15,19 @@ class SimpleSparseStrategy:
         if query.sparse_vector is None:
             raise ValueError("simple_sparse retrieval requires a sparse query vector")
 
-        params = self.profile.sparse_params()
+        params = self.profile.sparse
+        assert params is not None
+        fetch_top_k = (
+            params.fetch_top_k if params.fetch_top_k is not None else self.profile.fetch_top_k
+        )
         all_hits: list[RetrievalHit] = []
         for collection in self.profile.collections:
             hits = self.adapter.search_sparse(
                 collection=collection,
                 query_vector=query.sparse_vector,
-                top_k=params.fetch_top_k,
+                top_k=fetch_top_k,
                 source_filter=self.profile.source_filter,
-                vector_name=self.profile.vector_name,
+                vector_name=params.vector_name,
             )
             all_hits.extend(self._normalize_collection_scores(hits))
 
@@ -40,25 +44,15 @@ class SimpleSparseStrategy:
         return [replace(hit, score_norm=(hit.score - lo) / score_range) for hit in hits]
 
     def _prune_hits(self, hits: list[RetrievalHit]) -> list[RetrievalHit]:
-        if self.profile.sparse is None:
-            pruned = [hit for hit in hits if hit.score_norm >= self.profile.score_threshold]
-            return pruned or hits[: self.profile.fallback_top_k]
-
-        params = self.profile.sparse_params()
-        pruned = hits
-        if params.min_score_ratio is not None and pruned:
-            min_score = pruned[0].score_norm * params.min_score_ratio
-            pruned = [hit for hit in pruned if hit.score_norm >= min_score]
-        elif params.gap_ratio is None and params.max_kept is None:
-            pruned = [hit for hit in pruned if hit.score_norm >= self.profile.score_threshold]
-
+        params = self.profile.sparse
+        assert params is not None
+        min_score = params.min_score if params.min_score is not None else self.profile.min_score
+        pruned = [hit for hit in hits if hit.score_norm >= min_score]
         if params.gap_ratio is not None:
             pruned = self._keep_until_score_gap(pruned, params.gap_ratio)
         if not pruned:
             pruned = hits[: self.profile.fallback_top_k]
-        if params.max_kept is not None:
-            pruned = pruned[: params.max_kept]
-        return pruned
+        return pruned[: self.profile.output_top_k]
 
     def _keep_until_score_gap(
         self,

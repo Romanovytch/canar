@@ -1,7 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+RetrievalStrategyName = Literal["simple_vector", "simple_sparse", "hybrid"]
+FusionMethod = Literal["rrf", "weighted_rrf"]
+
+
+def _validate_retriever_overrides(
+    retriever: str,
+    fetch_top_k: int | None,
+    min_score: float | None,
+) -> None:
+    if fetch_top_k is not None and fetch_top_k <= 0:
+        raise ValueError(f"{retriever}.fetch_top_k must be greater than 0")
+    if min_score is not None and not 0.0 <= min_score <= 1.0:
+        raise ValueError(f"{retriever}.min_score must be between 0 and 1")
 
 
 @dataclass(frozen=True)
@@ -12,22 +26,30 @@ class SparseVector:
 
 @dataclass(frozen=True)
 class DenseRetrievalParams:
-    fetch_top_k: int = 5
+    vector_name: str | None = None
+    fetch_top_k: int | None = None
     min_score: float | None = None
-    max_kept: int | None = None
+
+    def __post_init__(self) -> None:
+        _validate_retriever_overrides("dense", self.fetch_top_k, self.min_score)
 
 
 @dataclass(frozen=True)
 class SparseRetrievalParams:
-    fetch_top_k: int = 5
-    min_score_ratio: float | None = None
+    vector_name: str | None = None
+    fetch_top_k: int | None = None
+    min_score: float | None = None
     gap_ratio: float | None = None
-    max_kept: int | None = None
+
+    def __post_init__(self) -> None:
+        _validate_retriever_overrides("sparse", self.fetch_top_k, self.min_score)
+        if self.gap_ratio is not None and not 0.0 <= self.gap_ratio <= 1.0:
+            raise ValueError("sparse.gap_ratio must be between 0 and 1")
 
 
 @dataclass(frozen=True)
 class FusionRetrievalParams:
-    method: str = "rrf"
+    method: FusionMethod = "rrf"
     rrf_k: int = 60
     weights: dict[str, float] = field(
         default_factory=lambda: {
@@ -35,12 +57,22 @@ class FusionRetrievalParams:
             "sparse": 1.0,
         }
     )
-    output_top_k: int = 5
+    output_top_k: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.rrf_k <= 0:
+            raise ValueError("fusion.rrf_k must be greater than 0")
+        if self.output_top_k is not None and self.output_top_k <= 0:
+            raise ValueError("fusion.output_top_k must be greater than 0")
 
 
 @dataclass(frozen=True)
 class ParentChildRetrievalParams:
     parent_collection_suffix: str = "_parent"
+
+    def __post_init__(self) -> None:
+        if not self.parent_collection_suffix:
+            raise ValueError("parent_child.parent_collection_suffix must not be empty")
 
 
 @dataclass(frozen=True)
@@ -50,34 +82,75 @@ class SummaryRetrievalParams:
 
 @dataclass(frozen=True)
 class RerankRetrievalParams:
-    output_top_k: int = 5
-    # Profiles select an explicit model identifier from the factory allowlist.
-    reranker_name: str = "bge-v2-m3"
+    output_top_k: int | None = None
+    model: str = "bge-v2-m3"
     device: str | None = "auto"
     max_length: int = 8192
+
+    def __post_init__(self) -> None:
+        if self.output_top_k is not None and self.output_top_k <= 0:
+            raise ValueError("rerank.output_top_k must be greater than 0")
+        if not self.model:
+            raise ValueError("rerank.model must not be empty")
+        if self.max_length <= 0:
+            raise ValueError("rerank.max_length must be greater than 0")
 
 
 @dataclass(frozen=True)
 class RetrievalProfile:
     name: str
-    strategy: str
+    strategy: RetrievalStrategyName
     collections: tuple[str, ...]
-    score_threshold: float = 0.35
-    source_filter: str | None = "utilitr"
+    fetch_top_k: int = 10
+    min_score: float = 0.75
     fallback_top_k: int = 3
-    vector_name: str | None = None
+    output_top_k: int = 5
+    source_filter: str | None = None
     dense: DenseRetrievalParams | None = None
     sparse: SparseRetrievalParams | None = None
-    fusion: FusionRetrievalParams | str | None = None
+    fusion: FusionRetrievalParams | None = None
     rerank: RerankRetrievalParams | None = None
-    rrf_k: int = 60
-    dense_weight: float = 1.0
-    sparse_weight: float = 1.0
     parent_child: ParentChildRetrievalParams | None = None
-    parent_collection_suffix: str = "_parent"
     summary: SummaryRetrievalParams | None = None
 
+    def effective_collections(self) -> tuple[str, ...]:
+        if self.summary is None:
+            return self.collections
+        suffix = self.summary.collection_suffix.strip()
+        return tuple(f"{collection}{suffix}" for collection in self.collections)
+
     def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("profile.name must not be empty")
+        if not self.collections:
+            raise ValueError("profile.collections must not be empty")
+        if self.fetch_top_k <= 0:
+            raise ValueError("profile.fetch_top_k must be greater than 0")
+        if not 0.0 <= self.min_score <= 1.0:
+            raise ValueError("profile.min_score must be between 0 and 1")
+        if self.fallback_top_k < 0:
+            raise ValueError("profile.fallback_top_k must be greater than or equal to 0")
+        if self.output_top_k <= 0:
+            raise ValueError("profile.output_top_k must be greater than 0")
+
+        required_blocks = {
+            "simple_vector": (("dense", self.dense),),
+            "simple_sparse": (("sparse", self.sparse),),
+            "hybrid": (
+                ("dense", self.dense),
+                ("sparse", self.sparse),
+                ("fusion", self.fusion),
+            ),
+        }
+        if self.strategy not in required_blocks:
+            raise ValueError(f"unsupported retrieval strategy: {self.strategy!r}")
+        missing = [name for name, value in required_blocks[self.strategy] if value is None]
+        if missing:
+            joined = ", ".join(missing)
+            raise ValueError(f"{self.strategy} profile requires parameter block(s): {joined}")
+        if self.rerank is not None and self.strategy != "hybrid":
+            raise ValueError("rerank is only supported by hybrid profiles")
+
         if self.summary is None:
             return
         if self.strategy != "hybrid":
@@ -86,50 +159,6 @@ class RetrievalProfile:
             raise ValueError("summary retrieval requires a non-empty collection suffix")
         if self.parent_child is not None:
             raise ValueError("summary retrieval cannot be combined with parent retrieval")
-
-    def effective_collections(self) -> tuple[str, ...]:
-        if self.summary is None:
-            return self.collections
-        suffix = self.summary.collection_suffix.strip()
-        return tuple(f"{collection}{suffix}" for collection in self.collections)
-
-    def dense_params(self) -> DenseRetrievalParams:
-        if self.dense is not None:
-            return self.dense
-        return DenseRetrievalParams(
-            fetch_top_k=5,
-            min_score=self.score_threshold,
-        )
-
-    def sparse_params(self) -> SparseRetrievalParams:
-        if self.sparse is not None:
-            return self.sparse
-        return SparseRetrievalParams(fetch_top_k=5)
-
-    def fusion_params(self) -> FusionRetrievalParams:
-        if isinstance(self.fusion, FusionRetrievalParams):
-            return self.fusion
-        return FusionRetrievalParams(
-            method=self.fusion or "rrf",
-            rrf_k=self.rrf_k,
-            weights={
-                "dense": self.dense_weight,
-                "sparse": self.sparse_weight,
-            },
-            output_top_k=5,
-        )
-
-    def parent_child_params(self) -> ParentChildRetrievalParams:
-        if self.parent_child is not None:
-            return self.parent_child
-        return ParentChildRetrievalParams(
-            parent_collection_suffix=self.parent_collection_suffix,
-        )
-
-    def rerank_params(self) -> RerankRetrievalParams | None:
-        if self.rerank is not None:
-            return self.rerank
-        return None
 
 
 @dataclass(frozen=True)

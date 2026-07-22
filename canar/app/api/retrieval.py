@@ -25,14 +25,11 @@ def search_qdrant(
         name="simple_vector",
         strategy="simple_vector",
         collections=tuple(collections),
-        score_threshold=0.35,
+        fetch_top_k=top_k_per_collection,
+        min_score=0.35,
         source_filter=source_filter,
         fallback_top_k=3,
-        vector_name=vector_name,
-        dense=DenseRetrievalParams(
-            fetch_top_k=top_k_per_collection,
-            min_score=0.35,
-        ),
+        dense=DenseRetrievalParams(vector_name=vector_name),
     )
     strategy = SimpleVectorStrategy(profile, QdrantRetrievalAdapter(qdrant_url, api_key))
     hits = strategy.search(

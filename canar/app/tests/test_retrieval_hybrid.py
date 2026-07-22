@@ -61,6 +61,19 @@ def hybrid_query() -> RetrievalQuery:
     )
 
 
+def hybrid_profile(**overrides) -> RetrievalProfile:
+    values = {
+        "name": "hybrid",
+        "strategy": "hybrid",
+        "collections": ("docs",),
+        "dense": DenseRetrievalParams(),
+        "sparse": SparseRetrievalParams(),
+        "fusion": FusionRetrievalParams(),
+    }
+    values.update(overrides)
+    return RetrievalProfile(**values)
+
+
 def test_hybrid_profiles_are_registered_with_expected_parameters():
     profiles = build_retrieval_profiles(("docs",), sparse_vector_name="text-sparse")
 
@@ -70,58 +83,41 @@ def test_hybrid_profiles_are_registered_with_expected_parameters():
     assert profile.name == "hybrid"
     assert profile.strategy == "hybrid"
     assert profile.collections == ("docs",)
-    assert profile.dense == DenseRetrievalParams(
-        fetch_top_k=10,
-        min_score=0.35,
-        max_kept=None,
-    )
-    assert profile.sparse == SparseRetrievalParams(
-        fetch_top_k=10,
-        min_score_ratio=0.35,
-        gap_ratio=None,
-        max_kept=None,
-    )
+    assert profile.fetch_top_k == 10
+    assert profile.min_score == 0.75
+    assert profile.dense == DenseRetrievalParams()
+    assert profile.sparse == SparseRetrievalParams(vector_name="text-sparse")
     assert profile.fusion == FusionRetrievalParams(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=5,
+        output_top_k=None,
     )
     assert profile.rerank is None
-    assert profile.vector_name == "text-sparse"
 
     assert rerank_profile.name == "hybrid_rerank_bge"
     assert rerank_profile.strategy == "hybrid"
     assert rerank_profile.collections == ("docs",)
-    assert rerank_profile.dense == DenseRetrievalParams(
-        fetch_top_k=20,
-        min_score=0.35,
-        max_kept=None,
-    )
-    assert rerank_profile.sparse == SparseRetrievalParams(
-        fetch_top_k=20,
-        min_score_ratio=0.35,
-        gap_ratio=None,
-        max_kept=None,
-    )
+    assert rerank_profile.fetch_top_k == 20
+    assert rerank_profile.dense == DenseRetrievalParams()
+    assert rerank_profile.sparse == SparseRetrievalParams(vector_name="text-sparse")
     assert rerank_profile.fusion == FusionRetrievalParams(
         method="rrf",
         rrf_k=60,
         weights={"dense": 1.0, "sparse": 1.0},
-        output_top_k=20,
+        output_top_k=None,
     )
+    assert rerank_profile.output_top_k == 20
     assert rerank_profile.rerank == RerankRetrievalParams(output_top_k=5)
-    assert rerank_profile.vector_name == "text-sparse"
 
 
-def test_structured_hybrid_profile_fields_resolve_to_strategy_params():
-    profile = RetrievalProfile(
+def test_hybrid_profile_exposes_root_policy_and_option_blocks_directly():
+    profile = hybrid_profile(
         name="structured_hybrid",
-        strategy="hybrid",
-        collections=("docs",),
-        score_threshold=0.42,
-        dense=DenseRetrievalParams(fetch_top_k=30, min_score=0.42),
-        sparse=SparseRetrievalParams(fetch_top_k=20),
+        fetch_top_k=30,
+        min_score=0.42,
+        dense=DenseRetrievalParams(vector_name="dense"),
+        sparse=SparseRetrievalParams(vector_name="sparse"),
         fusion=FusionRetrievalParams(
             method="weighted_rrf",
             rrf_k=12,
@@ -131,18 +127,18 @@ def test_structured_hybrid_profile_fields_resolve_to_strategy_params():
         rerank=RerankRetrievalParams(output_top_k=5),
     )
 
-    assert profile.dense_params() == DenseRetrievalParams(
-        fetch_top_k=30,
-        min_score=0.42,
-    )
-    assert profile.sparse_params() == SparseRetrievalParams(fetch_top_k=20)
-    assert profile.fusion_params() == FusionRetrievalParams(
+    assert profile.fetch_top_k == 30
+    assert profile.min_score == 0.42
+    assert profile.dense == DenseRetrievalParams(vector_name="dense")
+    assert profile.sparse == SparseRetrievalParams(vector_name="sparse")
+    assert profile.fusion == FusionRetrievalParams(
         method="weighted_rrf",
         rrf_k=12,
         weights={"dense": 1.5, "sparse": 2.0},
         output_top_k=8,
     )
-    assert profile.rerank_params() == RerankRetrievalParams(output_top_k=5)
+    assert profile.rerank == RerankRetrievalParams(output_top_k=5)
+
 
 def test_simple_vector_profile_uses_dense_vector_name():
     profiles = build_retrieval_profiles(
@@ -151,8 +147,8 @@ def test_simple_vector_profile_uses_dense_vector_name():
         sparse_vector_name="text-sparse",
     )
 
-    assert profiles["simple_vector"].vector_name == "text-dense"
-    assert profiles["simple_sparse"].vector_name == "text-sparse"
+    assert profiles["simple_vector"].dense.vector_name == "text-dense"
+    assert profiles["simple_sparse"].sparse.vector_name == "text-sparse"
 
 
 def test_rrf_combines_ranked_lists_and_merges_duplicate_hits():
@@ -209,11 +205,9 @@ def test_rrf_sparse_weight_can_favor_sparse_results():
     assert [result.text for result in fused] == ["sparse top", "dense top"]
 
 
-def test_hybrid_strategy_uses_profile_fusion_output_top_k():
-    profile = RetrievalProfile(
+def test_hybrid_strategy_uses_fusion_output_top_k_override():
+    profile = hybrid_profile(
         name="hybrid_rerank_bge",
-        strategy="hybrid",
-        collections=("docs",),
         fusion=FusionRetrievalParams(method="rrf", output_top_k=20),
     )
     dense = FakeStrategy([hit("dense top")])
@@ -232,11 +226,23 @@ def test_hybrid_strategy_uses_profile_fusion_output_top_k():
     assert top_k == 20
 
 
+def test_hybrid_strategy_inherits_profile_output_top_k():
+    profile = hybrid_profile(output_top_k=7)
+    fusion = RecordingFusion()
+
+    HybridStrategy(
+        profile,
+        FakeStrategy([hit("dense top")]),
+        FakeStrategy([hit("sparse top")]),
+        fusion_strategies={"rrf": fusion},
+    ).search(hybrid_query())
+
+    _ranked_lists, top_k, _weights = fusion.calls[0]
+    assert top_k == 7
+
+
 def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():
-    profile = RetrievalProfile(
-        name="hybrid",
-        strategy="hybrid",
-        collections=("docs",),
+    profile = hybrid_profile(
         fusion=FusionRetrievalParams(
             method="weighted_rrf",
             rrf_k=60,
@@ -259,10 +265,7 @@ def test_hybrid_strategy_passes_weights_in_dense_then_sparse_order():
 
 
 def test_hybrid_strategy_uses_profile_rrf_k():
-    profile = RetrievalProfile(
-        name="hybrid",
-        strategy="hybrid",
-        collections=("docs",),
+    profile = hybrid_profile(
         fusion=FusionRetrievalParams(
             method="rrf",
             rrf_k=2,
@@ -302,10 +305,7 @@ def test_rrf_rejects_weight_count_mismatch():
 
 
 def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
-    profile = RetrievalProfile(
-        name="hybrid",
-        strategy="hybrid",
-        collections=("docs",),
+    profile = hybrid_profile(
         fusion=FusionRetrievalParams(method="rrf", output_top_k=2),
     )
     dense = FakeStrategy([hit("dense top"), hit("shared", metadata={"chunk_id": "same"})])
@@ -335,10 +335,7 @@ def test_hybrid_strategy_calls_dense_and_sparse_paths_and_limits_results():
 
 
 def test_hybrid_strategy_keeps_sparse_exact_match_in_fused_results():
-    profile = RetrievalProfile(
-        name="hybrid",
-        strategy="hybrid",
-        collections=("docs",),
+    profile = hybrid_profile(
         fusion=FusionRetrievalParams(method="rrf", output_top_k=3),
     )
     dense = FakeStrategy([hit("semantic result one"), hit("semantic result two")])
@@ -356,11 +353,8 @@ def test_hybrid_strategy_keeps_sparse_exact_match_in_fused_results():
 
 
 def test_hybrid_strategy_rejects_unknown_fusion_method():
-    profile = RetrievalProfile(
-        name="hybrid",
-        strategy="hybrid",
-        collections=("docs",),
-        fusion="unknown",
+    profile = hybrid_profile(
+        fusion=FusionRetrievalParams(method="unknown"),  # type: ignore[arg-type]
     )
     query = RetrievalQuery(
         text="question",

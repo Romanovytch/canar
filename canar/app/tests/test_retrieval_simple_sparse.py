@@ -32,11 +32,11 @@ def test_simple_sparse_normalizes_sorts_and_prunes_hits():
         name="simple_sparse",
         strategy="simple_sparse",
         collections=("docs_a", "docs_b"),
-        score_threshold=0.35,
-        sparse=SparseRetrievalParams(fetch_top_k=5),
+        fetch_top_k=5,
+        min_score=0.35,
+        sparse=SparseRetrievalParams(vector_name="text-sparse"),
         source_filter="utilitr",
         fallback_top_k=3,
-        vector_name="text-sparse",
     )
     adapter = FakeSparseAdapter(
         {
@@ -68,18 +68,19 @@ def test_simple_sparse_normalizes_sorts_and_prunes_hits():
     ]
 
 
-def test_simple_sparse_uses_sparse_params_for_ratio_gap_and_max_kept():
+def test_simple_sparse_params_override_profile_policy_and_apply_gap_ratio():
     profile = RetrievalProfile(
         name="hybrid_sparse",
         strategy="simple_sparse",
         collections=("docs",),
+        fetch_top_k=10,
+        min_score=0.75,
         sparse=SparseRetrievalParams(
+            vector_name="text-sparse",
             fetch_top_k=4,
-            min_score_ratio=0.5,
-            gap_ratio=0.3,
-            max_kept=2,
+            min_score=0.5,
+            gap_ratio=0.25,
         ),
-        vector_name="text-sparse",
     )
     adapter = FakeSparseAdapter(
         {
@@ -102,7 +103,7 @@ def test_simple_sparse_uses_sparse_params_for_ratio_gap_and_max_kept():
     )
 
     assert [hit.text for hit in hits] == ["top", "second"]
-    assert adapter.calls == [("docs", sparse_vector, 4, "utilitr", "text-sparse")]
+    assert adapter.calls == [("docs", sparse_vector, 4, None, "text-sparse")]
 
 
 def test_simple_sparse_keeps_top_fallback_when_no_hits_survive_threshold():
@@ -110,16 +111,17 @@ def test_simple_sparse_keeps_top_fallback_when_no_hits_survive_threshold():
         name="simple_sparse",
         strategy="simple_sparse",
         collections=("docs",),
-        score_threshold=2.0,
-        sparse=SparseRetrievalParams(fetch_top_k=5),
+        fetch_top_k=5,
+        min_score=0.75,
+        sparse=SparseRetrievalParams(),
         fallback_top_k=2,
     )
     adapter = FakeSparseAdapter(
         {
             "docs": [
-                RetrievalHit(text="one", collection="docs", score=4.0, score_norm=0),
-                RetrievalHit(text="two", collection="docs", score=3.0, score_norm=0),
-                RetrievalHit(text="three", collection="docs", score=2.0, score_norm=0),
+                RetrievalHit(text="one", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="two", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="three", collection="docs", score=1.0, score_norm=0),
             ]
         }
     )
@@ -140,6 +142,7 @@ def test_simple_sparse_requires_sparse_vector():
         name="simple_sparse",
         strategy="simple_sparse",
         collections=("docs",),
+        sparse=SparseRetrievalParams(),
     )
     strategy = SimpleSparseStrategy(profile, FakeSparseAdapter({}))
 

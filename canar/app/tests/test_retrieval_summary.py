@@ -6,9 +6,12 @@ import pytest
 
 from canar.app.retrieval.adapters.qdrant import QdrantRetrievalAdapter
 from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    FusionRetrievalParams,
     ParentChildRetrievalParams,
     RetrievalHit,
     RetrievalProfile,
+    SparseRetrievalParams,
     SparseVector,
     SummaryRetrievalParams,
 )
@@ -85,6 +88,7 @@ def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
             name="invalid",
             strategy="simple_vector",
             collections=("docs",),
+            dense=DenseRetrievalParams(),
             summary=SummaryRetrievalParams(collection_suffix="_summary"),
         )
 
@@ -93,6 +97,9 @@ def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
             name="invalid",
             strategy="hybrid",
             collections=("docs",),
+            dense=DenseRetrievalParams(),
+            sparse=SparseRetrievalParams(),
+            fusion=FusionRetrievalParams(),
             summary=SummaryRetrievalParams(collection_suffix="  "),
         )
 
@@ -101,6 +108,9 @@ def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
             name="invalid",
             strategy="hybrid",
             collections=("docs",),
+            dense=DenseRetrievalParams(),
+            sparse=SparseRetrievalParams(),
+            fusion=FusionRetrievalParams(),
             summary=SummaryRetrievalParams(collection_suffix="_summary"),
             parent_child=ParentChildRetrievalParams(),
         )
@@ -112,6 +122,10 @@ def test_summary_profile_is_registered_and_resolves_collections():
     assert AGENT_RETRIEVAL_PROFILES["generic_agent"] == "hybrid_summary"
     summary = profiles["hybrid_summary"]
     assert summary.summary == SummaryRetrievalParams(collection_suffix="_summary")
+    assert summary.fusion == FusionRetrievalParams(
+        weights={"dense": 3.0, "sparse": 1.0},
+        output_top_k=2,
+    )
     assert summary.effective_collections() == (
         "docs_a_summary",
         "docs_b_summary",
@@ -148,7 +162,10 @@ def test_service_runs_both_hybrid_paths_against_summary_collections(monkeypatch)
     assert {call["source_filter"] for call in adapter.dense_calls} == {None}
     assert {call["source_filter"] for call in adapter.sparse_calls} == {None}
     assert {hit.collection for hit in hits} <= set(expected_collections)
-    assert len(hits) <= service.profiles["hybrid_summary"].fusion_params().output_top_k
+    fusion = service.profiles["hybrid_summary"].fusion
+    assert fusion is not None
+    assert fusion.output_top_k is not None
+    assert len(hits) <= fusion.output_top_k
 
 
 @pytest.mark.parametrize(

@@ -22,7 +22,7 @@ Use `ARCHITECTURE.md` as the deeper design reference for the chat layer and retr
 - `canar/app/state.py` stores users, conversations, and messages with SQLModel; it uses Postgres when `DB_POSTGRES_URL` is set, otherwise SQLite at `data/app.db`.
 - `canar/app/retrieval/service.py` is the retrieval orchestration layer. It selects the agent retrieval profile, embeds the query, dispatches to the configured strategy, and returns typed `RetrievalHit` objects.
 - `canar/app/retrieval/profiles.py` contains the Python retrieval profile registry and agent-to-profile mapping. `r_helpdesk` currently uses `simple_vector`; `sas_to_r` has no retrieval profile.
-- `canar/app/retrieval/strategies/simple_vector.py` implements the only current retrieval strategy. It preserves dense-vector search, per-collection min-max normalization, fused sorting, thresholding, and top-3 fallback.
+- Retrieval strategies support dense, sparse, and hybrid search. Dense and sparse branches use per-collection min-max normalization, fused sorting, thresholding, and fallback behavior.
 - `canar/app/retrieval/adapters/qdrant.py` is the only place new retrieval code should call `qdrant-client` directly.
 - `canar/app/api/retrieval.py` is a backward-compatible wrapper for old `search_qdrant` callers; new code should use `RetrievalService`.
 - `canar/app/api/llm_client.py` and `canar/app/api/embed_client.py` isolate the OpenAI-compatible chat and embedding calls.
@@ -37,9 +37,9 @@ Use `ARCHITECTURE.md` as the deeper design reference for the chat layer and retr
 - `AppConfig` loads `.env` at import time and requires a non-empty `QDRANT_COLLECTIONS`.
 - Use the runtime config names from `canar/app/config.py` and `canar/app/state.py` (`LLM_*`, `EMBED_*`, `QDRANT_*`, `DB_POSTGRES_URL`, `APP_DB`) when editing code.
 - Host and Docker setups differ: host runs use `localhost`, containerized runs use service names like `qdrant` and `postgres`.
-- Retrieval edits should preserve the existing `source_filter="utilitr"` behavior, `top_k=5`, per-collection min-max normalization, `score_threshold=0.35`, and top-3 fallback unless an explicit task changes them.
+- Retrieval profiles default to `source_filter=None`, `fetch_top_k=10`, `min_score=0.75`, `output_top_k=5`, and top-3 fallback. Dense and sparse blocks may override `fetch_top_k` and `min_score`; fusion and rerank blocks inherit root `output_top_k` unless they override it. Preserve per-collection min-max normalization unless an explicit task changes it.
 - Do not call Qdrant directly from Streamlit UI code, agents, prompt assembly, or retrieval strategies outside the adapter boundary.
 - Do not pass Qdrant objects or Qdrant-shaped payload dictionaries into agents. Use project-owned `RetrievalHit` objects.
-- Hybrid retrieval is not implemented yet; do not add sparse or hybrid behavior unless explicitly requested.
+- Hybrid retrieval combines dense and sparse branches with configurable RRF fusion and optional reranking.
 - Keep prompt text in the agent modules rather than in `main.py`.
 - Prefer the existing `make` targets when documenting or verifying workflows, since they mirror CI.
