@@ -76,6 +76,11 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class SummaryRetrievalParams:
+    collection_suffix: str
+
+
+@dataclass(frozen=True)
 class RerankRetrievalParams:
     output_top_k: int | None = None
     model: str = "bge-v2-m3"
@@ -106,6 +111,13 @@ class RetrievalProfile:
     fusion: FusionRetrievalParams | None = None
     rerank: RerankRetrievalParams | None = None
     parent_child: ParentChildRetrievalParams | None = None
+    summary: SummaryRetrievalParams | None = None
+
+    def effective_collections(self) -> tuple[str, ...]:
+        if self.summary is None:
+            return self.collections
+        suffix = self.summary.collection_suffix.strip()
+        return tuple(f"{collection}{suffix}" for collection in self.collections)
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -138,6 +150,15 @@ class RetrievalProfile:
             raise ValueError(f"{self.strategy} profile requires parameter block(s): {joined}")
         if self.rerank is not None and self.strategy != "hybrid":
             raise ValueError("rerank is only supported by hybrid profiles")
+
+        if self.summary is None:
+            return
+        if self.strategy != "hybrid":
+            raise ValueError("summary retrieval requires strategy='hybrid'")
+        if not self.summary.collection_suffix.strip():
+            raise ValueError("summary retrieval requires a non-empty collection suffix")
+        if self.parent_child is not None:
+            raise ValueError("summary retrieval cannot be combined with parent retrieval")
 
 
 @dataclass(frozen=True)

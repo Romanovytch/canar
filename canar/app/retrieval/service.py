@@ -82,6 +82,7 @@ class RetrievalService:
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
 
         def build_hybrid_strategy(profile: RetrievalProfile) -> HybridStrategy:
+            effective_collections = profile.effective_collections()
             hybrid_dense_profile = replace(
                 profile,
                 name=f"{profile.name}:dense",
@@ -91,6 +92,8 @@ class RetrievalService:
                 fusion=None,
                 rerank=None,
                 parent_child=None,
+                collections=effective_collections,
+                summary=None,
             )
             hybrid_sparse_profile = replace(
                 profile,
@@ -101,6 +104,8 @@ class RetrievalService:
                 fusion=None,
                 rerank=None,
                 parent_child=None,
+                collections=effective_collections,
+                summary=None,
             )
             return HybridStrategy(
                 profile,

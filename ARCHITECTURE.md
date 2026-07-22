@@ -83,7 +83,7 @@ Current mapping:
 
 ```python
 AGENT_RETRIEVAL_PROFILES = {
-    "generic_agent": "hybrid_rerank_bge",
+    "generic_agent": "hybrid_summary",
     "r_helpdesk": "simple_vector",
     "sas_to_r": None,
 }
@@ -169,6 +169,11 @@ for child retrieval, plus `parent_child` for parent collection lookup. Parent-ch
 reranker variants are derived from canonical profiles with `dataclasses.replace`; the
 reranker model variants come from a small model-name mapping.
 
+`hybrid_summary` is derived from canonical `hybrid`. Its `summary` block resolves
+each configured collection to `<collection>_summary`; fusion favors dense semantic
+retrieval with weights `{"dense": 3.0, "sparse": 1.0}` and returns two results.
+It is the retrieval profile mapped to `generic_agent`.
+
 Sparse and hybrid retrieval assume compatible sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
 
 ## Retrieval strategy
@@ -219,12 +224,18 @@ The result-list order is `[dense_hits, sparse_hits]`, so the positional RRF weig
 Hybrid retrieval runs both branches with the same root policy and their respective
 overrides. The precedence is `dense/sparse override` then `RetrievalProfile` default.
 
+Summary retrieval is a structured hybrid option. A profile with
+`summary=SummaryRetrievalParams(collection_suffix=...)` runs the same dense, sparse,
+thresholding, fallback, and RRF flow against each base collection plus the configured
+suffix. It returns the summary points directly and cannot be combined with
+`parent_child` expansion. The suffix is configured directly in the profile, alongside
+the other structured retrieval parameters.
+
 Reranking is enabled by selecting a rerank profile, such as `hybrid_rerank_bge`, with
 `rerank=RerankRetrievalParams(...)`. Fusion and rerank blocks may override
 `output_top_k`; when omitted, they inherit `RetrievalProfile.output_top_k`. The
 implemented rerank profiles use root `output_top_k=20` for dense/sparse branch caps
 and the fused rerank candidate pool, then `rerank.output_top_k=5` for final output.
-
 ## Data model
 
 Retrieval code exchanges typed project-owned objects:
@@ -265,6 +276,11 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class SummaryRetrievalParams:
+    collection_suffix: str
+
+
+@dataclass(frozen=True)
 class RerankRetrievalParams:
     output_top_k: int | None = None
     model: str = "bge-v2-m3"
@@ -287,6 +303,7 @@ class RetrievalProfile:
     fusion: FusionRetrievalParams | None = None
     rerank: RerankRetrievalParams | None = None
     parent_child: ParentChildRetrievalParams | None = None
+    summary: SummaryRetrievalParams | None = None
 
 
 @dataclass(frozen=True)

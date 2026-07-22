@@ -9,10 +9,11 @@ from canar.app.retrieval.models import (
     RerankRetrievalParams,
     RetrievalProfile,
     SparseRetrievalParams,
+    SummaryRetrievalParams,
 )
 
 AGENT_RETRIEVAL_PROFILES: dict[str, str | None] = {
-    "generic_agent": "hybrid_rerank_bge",
+    "generic_agent": "hybrid_summary",
     "r_helpdesk": "simple_vector",
     "sas_to_r": None,
 }
@@ -38,31 +39,33 @@ def build_retrieval_profiles(
         name="simple_vector",
         strategy="simple_vector",
         collections=collections,
-        min_score=0.8,
         dense=dense,
     )
     simple_sparse = RetrievalProfile(
         name="simple_sparse",
         strategy="simple_sparse",
         collections=collections,
-        min_score=0.8,
         sparse=sparse,
     )
     hybrid = RetrievalProfile(
         name="hybrid",
         strategy="hybrid",
         collections=collections,
-        min_score=0.8,
         fallback_top_k=5,
         dense=dense,
         sparse=sparse,
         fusion=FusionRetrievalParams(),
     )
 
-    # raise only min_score to 0.9
-    # simple_vector = replace(simple_vector, min_score=0.9)
-    # simple_sparse = replace(simple_sparse, min_score=0.9)
-    # hybrid = replace(hybrid, min_score=0.9)
+    hybrid_summary = replace(
+        hybrid,
+        name="hybrid_summary",
+        fusion=FusionRetrievalParams(
+            weights={"dense": 3.0, "sparse": 1.0},
+            output_top_k=2,
+        ),
+        summary=SummaryRetrievalParams(collection_suffix="_summary"),
+    )
 
     profiles = {
         simple_vector.name: simple_vector,
@@ -78,6 +81,7 @@ def build_retrieval_profiles(
             parent_child=parent_child,
         ),
         hybrid.name: hybrid,
+        hybrid_summary.name: hybrid_summary,
         "hybrid_parent_child": replace(
             hybrid,
             name="hybrid_parent_child",
