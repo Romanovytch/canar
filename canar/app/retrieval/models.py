@@ -44,6 +44,11 @@ class ParentChildRetrievalParams:
 
 
 @dataclass(frozen=True)
+class SummaryRetrievalParams:
+    collection_suffix: str
+
+
+@dataclass(frozen=True)
 class RerankRetrievalParams:
     output_top_k: int = 5
     # Profiles select an explicit model identifier from the factory allowlist.
@@ -70,6 +75,23 @@ class RetrievalProfile:
     sparse_weight: float = 1.0
     parent_child: ParentChildRetrievalParams | None = None
     parent_collection_suffix: str = "_parent"
+    summary: SummaryRetrievalParams | None = None
+
+    def __post_init__(self) -> None:
+        if self.summary is None:
+            return
+        if self.strategy != "hybrid":
+            raise ValueError("summary retrieval requires strategy='hybrid'")
+        if not self.summary.collection_suffix.strip():
+            raise ValueError("summary retrieval requires a non-empty collection suffix")
+        if self.parent_child is not None:
+            raise ValueError("summary retrieval cannot be combined with parent retrieval")
+
+    def effective_collections(self) -> tuple[str, ...]:
+        if self.summary is None:
+            return self.collections
+        suffix = self.summary.collection_suffix.strip()
+        return tuple(f"{collection}{suffix}" for collection in self.collections)
 
     def dense_params(self) -> DenseRetrievalParams:
         if self.dense is not None:

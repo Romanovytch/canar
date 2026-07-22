@@ -604,6 +604,7 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
         "simple_sparse",
         "simple_sparse_parent_child",
         "hybrid",
+        "hybrid_summary",
         "hybrid_rerank_bge",
         "hybrid_rerank_qwen_0.6b",
         "hybrid_rerank_qwen_4b",

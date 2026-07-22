@@ -82,18 +82,23 @@ class RetrievalService:
         qdrant = QdrantRetrievalAdapter(cfg.qdrant_url, cfg.qdrant_api_key)
 
         def build_hybrid_strategy(profile: RetrievalProfile) -> HybridStrategy:
+            effective_collections = profile.effective_collections()
             hybrid_dense_profile = replace(
                 profile,
                 name=f"{profile.name}:dense",
                 strategy="simple_vector",
+                collections=effective_collections,
                 dense=profile.dense_params(),
                 vector_name=cfg.qdrant_dense_vector_name or None,
+                summary=None,
             )
             hybrid_sparse_profile = replace(
                 profile,
                 name=f"{profile.name}:sparse",
                 strategy="simple_sparse",
+                collections=effective_collections,
                 sparse=profile.sparse_params(),
+                summary=None,
             )
             return HybridStrategy(
                 profile,
@@ -182,4 +187,3 @@ class RetrievalService:
         if expander is None:
             raise ValueError("Unsupported retrieval hit expansion: 'parent_child'")
         return expander.expand(hits, profile.parent_child_params())
-
