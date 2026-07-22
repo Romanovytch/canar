@@ -90,7 +90,7 @@ class RetrievalProfile:
     def effective_collections(self) -> tuple[str, ...]:
         if self.summary is None:
             return self.collections
-        suffix = self.summary.collection_suffix
+        suffix = self.summary.collection_suffix.strip()
         return tuple(f"{collection}{suffix}" for collection in self.collections)
 
     def dense_params(self) -> DenseRetrievalParams:
