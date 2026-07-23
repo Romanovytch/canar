@@ -58,3 +58,7 @@ profiles:
  - name: hybrid_parent_child_rerank_qwen_4b
 
  #- name: hybrid_parent_child_rerank_qwen_8b
+
+ # Summary retrieval: hybrid over the '<collection>_summaries' collection built by
+ # the AgoRa summary ingestion. Needs that collection to exist (see SETUP.md).
+ - name: hybrid_summary
