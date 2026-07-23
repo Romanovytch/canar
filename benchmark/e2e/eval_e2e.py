@@ -87,39 +87,24 @@ from canar.app.config import AppConfig  # noqa: E402
 from canar.app.retrieval.profiles import build_retrieval_profiles  # noqa: E402
 from canar.app.retrieval.service import RetrievalService  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Config — product settings from canar/.env; benchmark settings from config.yaml.
-# ---------------------------------------------------------------------------
-
-cfg = AppConfig()
-cfg.validate()
-
-BENCH = load_config(ARGS.config)
+# Shared runtime is initialized once; collection-specific state is rebuilt per config.
+cfg = None
+BENCH = None
 RETRIEVAL_K = ARGS.retrieval_k
-
-DATASET = DatasetSpec(
-    path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
-    limit=BENCH.limit,                # null in YAML = all questions
-)
-
-# Generation budget. qwen3.5 is a *reasoning* model: it spends a hidden token
-# budget "thinking" before answering, so the app's default max_tokens=2048 runs
-# out mid-thought and returns EMPTY answers. Keep high. Env overrides YAML.
-GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", BENCH.gen_max_tokens))
-
-# RAGAS judge — may differ from the product LLM. A non-reasoning model
-# (qwen2.5:7b) avoids the timeouts of the reasoning 9B. Priority: env > YAML > product.
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or BENCH.judge_model or cfg.llm_model
-
-# Optional resource benchmark (CPU/memory/GPU per phase). Off by default; when on
-# it adds a tiny sampler thread per phase. Priority: env > YAML. Turn on with
-# MEASURE_RESOURCES=1 or run.measure_resources in config.yaml.
-_measure_env = os.environ.get("MEASURE_RESOURCES")
-MEASURE_RESOURCES = (
-    _measure_env.strip().lower() not in ("", "0", "false", "no", "off")
-    if _measure_env is not None
-    else BENCH.measure_resources
-)
+DATASET = None
+GEN_MAX_TOKENS = None
+JUDGE_MODEL = None
+MEASURE_RESOURCES = False
+PROVENANCE = {}
+embed = None
+chat = None
+token_counter = None
+sparse_embed = None
+profiles = {}
+BENCH_AGENT_PROFILES = {}
+service = None
+judge_llm = None
+judge_embeddings = None
 
 
 def _git_commit() -> str:
@@ -132,45 +117,145 @@ def _git_commit() -> str:
         return "unknown"
 
 
-# Provenance — stamped on every result row so a CSV describes what produced it
-# (which embedding model, which collection, which judge, which code). This is
-# what makes results comparable across machines despite per-developer configs.
-PROVENANCE = {
-    "benchmark_config": str(ARGS.config),
-    "retrieval_k": RETRIEVAL_K if RETRIEVAL_K is not None else "all_retrieved",
-    "embed_model": cfg.embed_model,
-    "collection": ",".join(cfg.qdrant_collections),
-    "judge_model": JUDGE_MODEL,
-    "git_commit": _git_commit(),
-}
-# When measuring resources, also stamp the machine (CPU / RAM / GPU) so the
-# numbers can be compared fairly across computers.
-if MEASURE_RESOURCES:
-    PROVENANCE.update(hardware_profile())
+def _measure_resources_from_env() -> bool | None:
+    """Return the process-wide MEASURE_RESOURCES override, if one was set."""
+    raw = os.environ.get("MEASURE_RESOURCES")
+    if raw is None:
+        return None
+    return raw.strip().lower() not in ("", "0", "false", "no", "off")
 
-# CanaR clients (product code).
-embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
-chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model,{"reasoning_effort": cfg.llm_thinking})
 
-# Token counter (#64): prefers the configured model's tokenizer, then tiktoken,
-# then a heuristic. Set BENCH_TOKENIZER to a HF model name for exact counts.
-token_counter = TokenCounter(os.environ.get("BENCH_TOKENIZER"))
+def _apply_collection_override(app_cfg: AppConfig, bench) -> None:
+    """Let one benchmark YAML select the collection for this run."""
+    env = bench.environment or {}
+    collections = env.get("collections")
+    collection = env.get("collection")
+    if collections:
+        if isinstance(collections, str):
+            app_cfg.qdrant_collections = tuple(
+                item.strip() for item in collections.split(",") if item.strip()
+            )
+        else:
+            app_cfg.qdrant_collections = tuple(collections)
+    elif collection:
+        app_cfg.qdrant_collections = (collection,)
 
-# Sparse query encoder (FastEmbed/BM25), built only when canar/.env sets
-# FASTEMBED_SPARSE_MODEL. None means no sparse/hybrid profile can run.
-sparse_embed = FastEmbedClient(cfg.fastembed_sparse_model) if cfg.fastembed_sparse_model else None
 
-# The product's retrieval service builds the real profiles exactly as the app
-# does — simple_vector (dense), simple_sparse (BM25), hybrid (dense + sparse
-# fused), and profile-level additions such as rerank. Benchmark labels may be
-# shorter than product profile names (e.g. "dense" -> "simple_vector"), so resolve
-# each configured row to the real RetrievalProfile before constructing the
-# service. That lets rerank profiles be discovered at service construction time.
-profiles = build_retrieval_profiles(
-    tuple(cfg.qdrant_collections),
-    dense_vector_name=cfg.qdrant_dense_vector_name,
-    sparse_vector_name=cfg.qdrant_sparse_vector_name,
-)
+def _config_label(path: Path) -> str:
+    """Filesystem-friendly label for grouping multi-config batch output."""
+    return path.stem.replace("config.", "").replace(" ", "_")
+
+
+def configure_run(config_path: Path, bench, *, measure_resources: bool) -> None:
+    """
+    Build all per-config state.
+
+    Each benchmark YAML can carry its own dataset/questions and target collection.
+    The LLM judge, clients, token counter and resource flag are initialized once
+    and reused for every collection in this CLI invocation.
+    """
+    global cfg
+    global BENCH
+    global RETRIEVAL_K
+    global DATASET
+    global GEN_MAX_TOKENS
+    global JUDGE_MODEL
+    global MEASURE_RESOURCES
+    global PROVENANCE
+    global embed
+    global chat
+    global token_counter
+    global sparse_embed
+    global profiles
+    global BENCH_AGENT_PROFILES
+    global service
+    global judge_llm
+    global judge_embeddings
+
+    if cfg is None:
+        cfg = AppConfig()
+
+        # If the user no longer passes QDRANT_COLLECTIONS in the shell, use the
+        # first config's collection so AppConfig still validates.
+        if not cfg.qdrant_collections:
+            _apply_collection_override(cfg, bench)
+        cfg.validate()
+
+        MEASURE_RESOURCES = measure_resources
+        GEN_MAX_TOKENS = int(os.environ.get("GEN_MAX_TOKENS", bench.gen_max_tokens))
+        JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or bench.judge_model or cfg.llm_model
+
+        embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
+        chat = ChatClient(
+            cfg.llm_base,
+            cfg.llm_key,
+            cfg.llm_model,
+            {"reasoning_effort": cfg.llm_thinking},
+        )
+        token_counter = TokenCounter(os.environ.get("BENCH_TOKENIZER"))
+        sparse_embed = (
+            FastEmbedClient(cfg.fastembed_sparse_model)
+            if cfg.fastembed_sparse_model
+            else None
+        )
+
+        judge_llm = ChatOpenAI(
+            model=JUDGE_MODEL,
+            openai_api_base=cfg.llm_base,
+            openai_api_key=cfg.llm_key or "EMPTY",
+            temperature=0.0,
+            reasoning_effort=cfg.llm_thinking,
+            extra_body={"keep_alive": "10m"},
+        )
+        judge_embeddings = NormalizingEmbeddings(
+            OpenAIEmbeddings(
+                model=cfg.embed_model,
+                openai_api_base=cfg.embed_base,
+                openai_api_key=cfg.embed_key or "EMPTY",
+                check_embedding_ctx_length=False,
+            )
+        )
+
+    _apply_collection_override(cfg, bench)
+    cfg.validate()
+
+    BENCH = bench
+    RETRIEVAL_K = ARGS.retrieval_k
+
+    DATASET = DatasetSpec(
+        path=BENCH_DIR / BENCH.dataset,
+        limit=BENCH.limit,
+    )
+
+    # Provenance is stamped on every row so a CSV describes what produced it.
+    PROVENANCE = {
+        "benchmark_config": str(config_path),
+        "retrieval_k": RETRIEVAL_K if RETRIEVAL_K is not None else "all_retrieved",
+        "embed_model": cfg.embed_model,
+        "collection": ",".join(cfg.qdrant_collections),
+        "judge_model": JUDGE_MODEL,
+        "git_commit": _git_commit(),
+    }
+    if MEASURE_RESOURCES:
+        PROVENANCE.update(hardware_profile())
+
+    profiles = build_retrieval_profiles(
+        tuple(cfg.qdrant_collections),
+        dense_vector_name=cfg.qdrant_dense_vector_name,
+        sparse_vector_name=cfg.qdrant_sparse_vector_name,
+    )
+
+    BENCH_AGENT_PROFILES = {
+        f"benchmark:{spec.name}": spec.name
+        for spec in BENCH.profiles
+    }
+    service = RetrievalService.from_config(
+        cfg,
+        embed,
+        sparse_embed,
+        profiles=profiles,
+        agent_profiles=BENCH_AGENT_PROFILES,
+    )
 
 
 def resolve_profile(spec):
@@ -223,43 +308,6 @@ def profile_needs_sparse(profile) -> bool:
     return profile.name in SPARSE_PROFILE_NAMES
 
 
-BENCH_AGENT_PROFILES = {
-    f"benchmark:{spec.name}": spec.name
-    for spec in BENCH.profiles
-}
-
-service = RetrievalService.from_config(
-    cfg,
-    embed,
-    sparse_embed,
-    profiles=profiles,
-    agent_profiles=BENCH_AGENT_PROFILES,
-)
-
-# RAGAS judge — reuses the same local LLM/embeddings endpoints.
-# (LangChain wrappers because RAGAS expects them; this is eval-side only,
-#  the product's answers are generated by CanaR's ChatClient above.)
-judge_llm = ChatOpenAI(
-    model=JUDGE_MODEL,
-    openai_api_base=cfg.llm_base,
-    openai_api_key=cfg.llm_key or "EMPTY",
-    temperature=0.0,
-    reasoning_effort=cfg.llm_thinking,   #
-    extra_body={"keep_alive": "10m"},   # avoid Ollama unloading the model between judge calls
-)
-# APOSTROPHE NORMALIZATION WORKAROUND: RAGAS-generated strings also pass through
-# bge-m3, so wrap both its sync and async embedding calls. To remove it, assign
-# the inner `OpenAIEmbeddings(...)` directly to `judge_embeddings`.
-judge_embeddings = NormalizingEmbeddings(
-    OpenAIEmbeddings(
-        model=cfg.embed_model,
-        openai_api_base=cfg.embed_base,
-        openai_api_key=cfg.embed_key or "EMPTY",
-        check_embedding_ctx_length=False,  # send raw strings; Ollama rejects token arrays
-    )
-)
-
-
 def check_environment() -> None:
     """
     Abort if canar/.env does not match the environment the config.yaml declares.
@@ -278,8 +326,8 @@ def check_environment() -> None:
     if exp_collection and exp_collection not in cfg.qdrant_collections:
         sys.exit(
             f"Environment mismatch: config.yaml expects collection '{exp_collection}' but "
-            f"canar/.env has QDRANT_COLLECTIONS={list(cfg.qdrant_collections)}.\n"
-            "Align canar/.env (or update config.yaml's environment block) before running."
+            f"effective QDRANT_COLLECTIONS={list(cfg.qdrant_collections)}.\n"
+            "Update the benchmark YAML environment block before running."
         )
 
 
@@ -436,13 +484,10 @@ def make_pipeline(search):
     return ask_canar
 
 
-def main() -> None:
+def run_current_config(run_dir: Path) -> None:
     preflight()
     print(f"Profiles to benchmark: {[p.name for p in BENCH.profiles]} | judge: {JUDGE_MODEL}")
     print(f"Provenance: {PROVENANCE}\n")
-
-    # One folder per benchmark run; each strategy gets a subfolder inside it.
-    run_dir = HERE / "results" / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     summaries = []
     for spec in BENCH.profiles:
@@ -520,6 +565,23 @@ def main() -> None:
         print("\n".join(lines))
 
         print(f"\nRun saved to {run_dir}")
+
+
+def main() -> None:
+    config_paths = ARGS.configs
+    benches = [(config_path, load_config(config_path)) for config_path in config_paths]
+    measure_override = _measure_resources_from_env()
+    measure_resources = (
+        measure_override if measure_override is not None else benches[0][1].measure_resources
+    )
+
+    # One folder per CLI invocation; each config and then each strategy gets a
+    # subfolder inside it.
+    batch_dir = HERE / "results" / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    for config_path, bench in benches:
+        print(f"\n=== Benchmark config: {config_path} ===")
+        configure_run(config_path, bench, measure_resources=measure_resources)
+        run_current_config(batch_dir / _config_label(config_path))
 
 
 if __name__ == "__main__":

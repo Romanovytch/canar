@@ -18,11 +18,16 @@ def parse_eval_args(
     parser.add_argument(
         "--config",
         type=Path,
-        default=default_config,
-        help="Benchmark YAML file (relative paths are resolved from the current directory).",
+        action="append",
+        default=None,
+        help=(
+            "Benchmark YAML file. Can be passed multiple times; relative paths "
+            "are resolved from the current directory."
+        ),
     )
     parser.add_argument(
         "--retrieval-k",
+        "--retrieval_k",
         type=int,
         default=None,
         help="Cutoff for retrieval metrics; default: score every returned result.",
@@ -31,8 +36,14 @@ def parse_eval_args(
     if args.retrieval_k is not None and args.retrieval_k <= 0:
         parser.error("--retrieval-k must be greater than zero")
 
-    config = args.config.expanduser()
-    if not config.is_absolute():
-        config = Path.cwd() / config
-    args.config = config.resolve()
+    configs = args.config or [default_config]
+    resolved_configs = []
+    for config in configs:
+        config = config.expanduser()
+        if not config.is_absolute():
+            config = Path.cwd() / config
+        resolved_configs.append(config.resolve())
+    args.configs = resolved_configs
+    # Backward-compatible convenience for callers that still expect one config.
+    args.config = resolved_configs[0]
     return args
