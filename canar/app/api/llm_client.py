@@ -4,12 +4,20 @@ from collections.abc import Iterable
 
 from openai import OpenAI
 
+from canar.app.api.llm_provider import build_chat_provider_kwargs
+
 
 class ChatClient:
-    def __init__(self, base_url: str, api_key: str, model: str,extra_body: dict | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        reasoning_effort: str = "",
+    ):
         self.client = OpenAI(base_url=base_url.rstrip("/"), api_key=api_key or "EMPTY")
         self.model = model
-        self.extra_body = extra_body
+        self.provider_kwargs = build_chat_provider_kwargs(base_url, reasoning_effort)
 
     def stream_chat(
         self,
@@ -25,7 +33,7 @@ class ChatClient:
             top_p=top_p,
             max_tokens=max_tokens,
             stream=True,
-            extra_body=self.extra_body
+            **self.provider_kwargs,
         )
         for chunk in resp:
             delta = chunk.choices[0].delta
