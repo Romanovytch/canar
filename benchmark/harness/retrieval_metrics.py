@@ -20,6 +20,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
+
 
 def make_is_relevant(expected: str):
     """Return (predicate, n_relevant) for a ';'-separated list of expected sources."""
@@ -63,6 +65,15 @@ def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dic
     k            : cutoff for @k metrics; None = use everything retrieved
     """
     is_relevant, n_relevant = make_is_relevant(expected)
+    if n_relevant == 0:
+        return {
+            "hit_rate": np.nan,
+            "mrr": np.nan,
+            "recall": np.nan,
+            "precision": np.nan,
+            "ndcg": np.nan,
+        }
+
     ranked_paths = _unique_fiches(ranked_paths)   # score documents, not chunks
     k = k or len(ranked_paths)
     top_k = ranked_paths[:k]
