@@ -36,7 +36,8 @@ def load_chatbot_on_boot(yaml_path: str | Path, db):
     except ValidationError as e:
         logger.error(
             f"[Erreur de Configuration] Le fichier YAML est mal formaté :\n{e}"
-            "\nCanaR a chargé son dernier état fonctionnel.")
+            "\nCanaR a chargé son dernier état fonctionnel."
+        )
         return
 
     with Session(db.engine) as session:

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import streamlit.web.cli as stcli
+
 from canar.app.utils.utils_logger import sys_logger
 
 logger = logging.getLogger("CanarLauncher")
