@@ -2,6 +2,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from canar.app.chatbots.chatbot_config import ChatbotConfig
+from canar.app.chatbots.chatbot_config_file import ChatbotYAMLConfig
 
 VALID_YAML_DATA = {
     "id": "test_bot_1",
@@ -16,9 +17,9 @@ def test_valid_chatbot_creation():
     Vérifie qu'un dictionnaire valide crée bien l'objet avec ces valeurs par défaut.
     """
 
-    assert ChatbotConfig.checkChatbot(VALID_YAML_DATA) is True
+    assert ChatbotYAMLConfig.checkChatbot(VALID_YAML_DATA) is True
 
-    bot = ChatbotConfig.createChatbot(VALID_YAML_DATA)
+    bot = ChatbotYAMLConfig.createChatbot(VALID_YAML_DATA)
 
     assert bot.id == "test_bot_1"
     assert bot.name == "Bot de Test"
@@ -35,7 +36,7 @@ def test_missing_mandatory_fields():
     """
     invalid_data = {"id": "bad_bot", "description": "Je n'ai pas de nom, ni de prompt"}
 
-    assert ChatbotConfig.checkChatbot(invalid_data) is False
+    assert ChatbotYAMLConfig.checkChatbot(invalid_data) is False
 
 
 def test_invalid_top_k_constraint():
@@ -43,7 +44,7 @@ def test_invalid_top_k_constraint():
     invalid_data = VALID_YAML_DATA.copy()
     invalid_data["top_k"] = 0
 
-    assert ChatbotConfig.checkChatbot(invalid_data) is False
+    assert ChatbotYAMLConfig.checkChatbot(invalid_data) is False
 
 
 def test_invalid_score_threshold_constraint():
@@ -51,7 +52,7 @@ def test_invalid_score_threshold_constraint():
     invalid_data = VALID_YAML_DATA.copy()
     invalid_data["score_threshold"] = 1.5
 
-    assert ChatbotConfig.checkChatbot(invalid_data) is False
+    assert ChatbotYAMLConfig.checkChatbot(invalid_data) is False
 
 
 def test_invalid_max_context_token():
@@ -59,7 +60,7 @@ def test_invalid_max_context_token():
     invalid_data = VALID_YAML_DATA.copy()
     invalid_data["max_context_tokens"] = 100
 
-    assert ChatbotConfig.checkChatbot(invalid_data) is False
+    assert ChatbotYAMLConfig.checkChatbot(invalid_data) is False
 
 
 @pytest.fixture
@@ -77,7 +78,8 @@ def mock_db():
 
 def test_save_chatbot_upsert(mock_db):
     """"""
-    bot = ChatbotConfig.createChatbot(VALID_YAML_DATA)
+    bot_yaml = ChatbotYAMLConfig.createChatbot(VALID_YAML_DATA)
+    bot = ChatbotConfig(**bot_yaml.model_dump())
 
     with Session(mock_db.engine) as session:
         bot.saveChatbot(session, True)
@@ -96,7 +98,8 @@ def test_save_chatbot_upsert(mock_db):
 
 def test_delete_chatbot(mock_db):
     """"""
-    bot = ChatbotConfig.createChatbot(VALID_YAML_DATA)
+    bot_yaml = ChatbotYAMLConfig.createChatbot(VALID_YAML_DATA)
+    bot = ChatbotConfig(**bot_yaml.model_dump())
 
     with Session(mock_db.engine) as session:
         bot.saveChatbot(session, True)
@@ -111,7 +114,8 @@ def test_delete_chatbot(mock_db):
 
 def test_delete_non_existent_chatbot(mock_db):
     """"""
-    bot = ChatbotConfig.createChatbot(VALID_YAML_DATA)
+    bot_yaml = ChatbotYAMLConfig.createChatbot(VALID_YAML_DATA)
+    bot = ChatbotConfig(**bot_yaml.model_dump())
 
     with Session(mock_db.engine) as session:
         deleted = bot.deleteChatbot(session)

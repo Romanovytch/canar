@@ -1,6 +1,5 @@
 import mimetypes
 
-from pydantic import ValidationError
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -23,7 +22,7 @@ class ChatbotConfig(SQLModel, table=True):
     # max_context_tokens cohérent avec le slider
     max_context_tokens: int = Field(default=2048, ge=256)
 
-    allowed_tools: list[str] = Field(default=[], sa_column=Column(JSON))
+    allowed_tools: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
     @property
     def exporte_mime_type(self) -> str:
@@ -55,6 +54,9 @@ class ChatbotConfig(SQLModel, table=True):
             existing_bot.top_k = self.top_k
             existing_bot.score_threshold = self.score_threshold
             existing_bot.max_context_tokens = self.max_context_tokens
+            existing_bot.accepted_file_types = self.accepted_file_types
+            existing_bot.export_extension = self.export_extension
+            existing_bot.allowed_tools = self.allowed_tools
 
             session.add(existing_bot)
 
@@ -69,33 +71,6 @@ class ChatbotConfig(SQLModel, table=True):
                 session.refresh(self)
 
         return True
-
-    @classmethod
-    def createChatbot(cls, yaml_data: dict) -> "ChatbotConfig":
-        """
-        Crée et retourne une instance d'objet ChatbotConfig à partir des données YAML.
-        La sauvegarde en base de données est géré séparément.
-        """
-        try:
-            return cls.model_validate(yaml_data)
-        except Exception as e:
-            raise ValueError(f"Erreur de synthaxe YAML pour le chatbot {e}") from e
-
-    @classmethod
-    def checkChatbot(cls, yaml_data: dict) -> bool:
-        """
-        Utilise Pydantic pour valider la structure YAML avant toute création.
-        Retourne True si les données respectent les règles, False sinon.
-        """
-        try:
-            cls.model_validate(yaml_data)
-            return True
-        except ValidationError as e:
-            print(
-                f"[Validation Échouée] Erreur pour le chatbot "
-                f"'{yaml_data.get('id', 'inconnu')}' :\n{e}"
-            )
-            return False
 
     def deleteChatbot(self, session: Session, commit: bool = True):
         """"""
