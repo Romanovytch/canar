@@ -1,7 +1,8 @@
 """Preflight: which collections each profile makes the benchmark validate.
 
-The summary profile queries a '<collection>_summaries' collection, so the
-preflight must validate that one too (not just the base collection)."""
+A summary profile queries a derived collection (the base name plus the suffix
+the product configures), so the preflight must validate that one too, not just
+the base collection. The suffix used below is only an example."""
 
 from dataclasses import dataclass
 

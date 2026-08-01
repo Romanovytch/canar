@@ -107,9 +107,12 @@ To also measure CPU/memory/GPU cost, run with `MEASURE_RESOURCES=1` (see
 
 ## 7. (Optional) Benchmark the `hybrid_summary` profile
 
-`hybrid_summary` retrieves over a **separate** `<collection>_summaries`
-collection (LLM-generated summaries), built by AgoRa's summary ingestion. The
-benchmark preflight aborts with a clear message if it's missing.
+`hybrid_summary` retrieves over a **separate** collection of LLM-generated
+summaries, built by AgoRa's summary ingestion. Its name is the base collection
+plus the suffix the product's profile configures (see
+`canar/app/retrieval/profiles.py`), and the benchmark derives it from the
+profile. The preflight prints the exact name it expects and aborts with a clear
+message if it's missing.
 
 Enable summaries in `agora/sources.yaml`:
 
@@ -119,8 +122,8 @@ Enable summaries in `agora/sources.yaml`:
     synthetic_llm_summary_max_sentences: 3
 ```
 
-Re-run the ingest with the LLM flags (it builds `utilitr_v2_summaries` alongside
-`utilitr_v2`); see AgoRa's docs for the exact options:
+Re-run the ingest with the LLM flags (it builds the summaries collection
+alongside the base one); see AgoRa's docs for the exact options:
 
 ```bash
 cd ../../agora && source .venv/bin/activate

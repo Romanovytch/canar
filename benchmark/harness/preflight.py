@@ -16,10 +16,12 @@ def collection_requirements(
     """What each collection the active profiles query must provide.
 
     Returns {collection_name: {"dense", "sparse", "source"}}. Uses the product's
-    own ``RetrievalProfile.effective_collections()``, so a summary profile is
-    validated against its ``<collection>_summaries`` collection automatically.
-    Requirements are unioned across profiles that share a collection; the
-    ``source`` payload is only required by profiles that apply a source filter.
+    own ``RetrievalProfile.effective_collections()``, so a profile that derives
+    its collection (e.g. a summary profile, which appends a configured suffix)
+    is validated against the derived name automatically — the suffix itself is
+    the product's business, not ours. Requirements are unioned across profiles
+    that share a collection; the ``source`` payload is only required by profiles
+    that apply a source filter.
     """
     reqs: dict[str, dict[str, bool]] = {}
     for profile in profiles:
