@@ -34,8 +34,7 @@ def init_app_agent_data(_db: DB):
     mimetypes.add_type("text/x-r-source", ".r")
     mimetypes.add_type("application/x-sas", ".sas")
 
-    yaml_path = "canar/app/chatbots/chatbotconfig.yaml"
-    load_chatbot_on_boot(yaml_path, _db)
+    load_chatbot_on_boot(cfg.chatbot_config_path, _db)
 
 
 # @st.cache_resource()
@@ -122,6 +121,10 @@ agent: str = st.session_state.get(
 
 sidebar(db, USER_ID, conv_id, [bot.id for bot in chatbot_list], agent, chatbot_list)
 
+
+# Defining the current bot cause it is needed by the chat client
+current_bot = next((bot for bot in chatbot_list if bot.id == st.session_state["agent"]), None)
+
 # ---------- Header with current conversation name + agent selector ----------
 AGENT_LABELS = {bot.id: bot.name for bot in chatbot_list}
 ordered_agents = [bot.id for bot in chatbot_list]
@@ -174,7 +177,7 @@ with ctrl_right:
         "Max tokens réponse",
         min_value=256,
         max_value=8192,
-        value=2048,
+        value=current_bot.max_context_tokens if current_bot else 2048,
         step=256,
         help="Augmente si tu colles de longs extraits de code.",
     )
@@ -238,22 +241,23 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # LLM and Embedding clients
-chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model)
+chat = ChatClient(cfg.llm_base, cfg.llm_key, current_bot.model)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 
 # Show messages
 render_messages(db, USER_ID, conv_id)
 
 # --- Input area + turn handling ---
-sas_code_uploaded = None
-current_bot = next((bot for bot in chatbot_list if bot.id == st.session_state["agent"]), None)
+uploaded_file_content = None
+
 if current_bot and current_bot.accepted_file_types:
     uploaded = st.file_uploader(
         "Uploader un fichier (optionnel)", type=current_bot.accepted_file_types
     )
     if uploaded is not None:
-        sas_code_uploaded = uploaded.read().decode("utf-8", errors="ignore")
+        uploaded_file_content = uploaded.read().decode("utf-8", errors="ignore")
 
 user_input = st.chat_input("Pose ta question (ou colle ton code)…")
 if user_input:
@@ -269,9 +273,9 @@ if user_input:
     if (
         current_bot.accepted_file_types
         and len(current_bot.accepted_file_types) > 0
-        and sas_code_uploaded
+        and uploaded_file_content
     ):
-        uploaded_file_cont = sas_code_uploaded
+        uploaded_file_cont = uploaded_file_content
 
     context_text = None
     src_list = []
@@ -280,7 +284,7 @@ if user_input:
         citations = search_qdrant(
             cfg.qdrant_url,
             cfg.qdrant_api_key,
-            list(cfg.qdrant_collections),
+            list(current_bot.collections),
             qvec,
             top_k_per_collection=5,
             source_filter="utilitr",

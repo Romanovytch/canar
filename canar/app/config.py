@@ -24,5 +24,9 @@ class AppConfig:
 
     db_path: str = os.getenv("APP_DB", "data/app.db")
 
+    chatbot_config_path: str = os.getenv(
+        "CANAR_CHATBOTS_CONFIG", "canar/app/chatbots/chatbotconfig.yaml"
+    )
+
     def validate(self):
         assert len(self.qdrant_collections) >= 1, "QDRANT_COLLECTIONS cannot be empty"
