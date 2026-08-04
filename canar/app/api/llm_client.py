@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from openai import OpenAI
 
-from canar.app.api.llm_provider import build_chat_provider_kwargs
+from canar.app.api.llm_provider import build_chat_provider_kwargs, resolve_llm_base_url
 
 
 class ChatClient:
@@ -14,10 +14,16 @@ class ChatClient:
         api_key: str,
         model: str,
         reasoning_effort: str = "",
+        provider_name: str = "",
     ):
-        self.client = OpenAI(base_url=base_url.rstrip("/"), api_key=api_key or "EMPTY")
+        resolved_base_url = resolve_llm_base_url(base_url, provider_name)
+        self.client = OpenAI(base_url=resolved_base_url, api_key=api_key or "EMPTY")
         self.model = model
-        self.provider_kwargs = build_chat_provider_kwargs(base_url, reasoning_effort)
+        self.provider_kwargs = build_chat_provider_kwargs(
+            resolved_base_url,
+            reasoning_effort,
+            provider_name=provider_name,
+        )
 
     def stream_chat(
         self,

@@ -193,7 +193,13 @@ st.markdown(
 )
 
 # LLM and Embedding clients
-chat = ChatClient(cfg.llm_base, cfg.llm_key, cfg.llm_model, cfg.llm_thinking)
+chat = ChatClient(
+    cfg.llm_base,
+    cfg.llm_key,
+    cfg.llm_model,
+    cfg.llm_thinking,
+    cfg.llm_provider_name,
+)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
 retrieval = RetrievalService.from_config(cfg, embed)
 
