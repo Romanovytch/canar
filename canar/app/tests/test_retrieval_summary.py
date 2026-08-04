@@ -89,7 +89,7 @@ def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
             strategy="simple_vector",
             collections=("docs",),
             dense=DenseRetrievalParams(),
-            summary=SummaryRetrievalParams(collection_suffix="_summary"),
+            summary=SummaryRetrievalParams(collection_suffix="_summaries"),
         )
 
     with pytest.raises(ValueError, match="requires a non-empty collection suffix"):
@@ -111,17 +111,17 @@ def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
             dense=DenseRetrievalParams(),
             sparse=SparseRetrievalParams(),
             fusion=FusionRetrievalParams(),
-            summary=SummaryRetrievalParams(collection_suffix="_summary"),
+            summary=SummaryRetrievalParams(collection_suffix="_summaries"),
             parent_child=ParentChildRetrievalParams(),
         )
 
 
-def test_summary_profile_is_registered_and_resolves_collections():
+def test_summaries_profile_is_registered_and_resolves_collections():
     profiles = build_retrieval_profiles(("docs_a", "docs_b"))
 
     assert AGENT_RETRIEVAL_PROFILES["generic_agent"] == "hybrid_summary"
     summary = profiles["hybrid_summary"]
-    assert summary.summary == SummaryRetrievalParams(collection_suffix="_summary")
+    assert summary.summary == SummaryRetrievalParams(collection_suffix="_summaries")
     assert summary.fusion == FusionRetrievalParams(
         weights={"dense": 3.0, "sparse": 1.0},
         output_top_k=2,
