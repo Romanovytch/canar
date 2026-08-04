@@ -33,8 +33,8 @@ def detect_llm_provider(base_url: str = "", provider_name: str = "") -> str:
 
 
 def resolve_llm_base_url(base_url: str = "", provider_name: str = "") -> str:
-    """Use Ollama's local OpenAI-compatible endpoint when no provider is configured."""
-    if not base_url.strip() and not provider_name.strip():
+    """Use Ollama's local endpoint when it is selected without a base URL."""
+    if not base_url.strip() and detect_llm_provider(base_url, provider_name) == "ollama":
         return DEFAULT_OLLAMA_BASE_URL
     return base_url.rstrip("/")
 

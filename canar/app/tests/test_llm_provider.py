@@ -36,8 +36,13 @@ def test_official_url_takes_precedence_over_provider_name():
     assert detect_llm_provider("https://api.mistral.ai/v1", "ollama") == "mistral"
 
 
-def test_missing_provider_configuration_uses_ollama_default_endpoint():
-    assert resolve_llm_base_url() == DEFAULT_OLLAMA_BASE_URL
+@pytest.mark.parametrize("provider_name", ["", "ollama", "Ollama"])
+def test_missing_ollama_base_url_uses_default_endpoint(provider_name):
+    assert resolve_llm_base_url(provider_name=provider_name) == DEFAULT_OLLAMA_BASE_URL
+
+
+def test_missing_non_ollama_base_url_is_not_defaulted():
+    assert resolve_llm_base_url(provider_name="openai") == ""
 
 
 def test_build_chat_provider_kwargs_for_ollama():
