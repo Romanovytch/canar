@@ -58,6 +58,7 @@ Create a `.env` file at the root of the project from `.env.example`.
 | `LLM_API_BASE`       | LLM API base URL                      | `https://api.mistral.ai/v1`                                                                         |
 | `LLM_API_KEY`        | LLM API key                           | `sk-...`                                                                                            |
 | `LLM_MODEL`          | Model name                            | `mistral-medium`                                                                                    |
+| `LLM_PROVIDER_NAME`  | Optional provider name                | `mistral`                                                                                           |
 | `EMBED_API_BASE`     | Embeddings API base URL               | `https://api.mistral.ai/v1`                                                                         |
 | `EMBED_API_KEY`      | Embeddings API key                    | `sk-...`                                                                                            |
 | `EMBED_MODEL`        | Embeddings model name                 | `mistral-embed`                                                                                     |
