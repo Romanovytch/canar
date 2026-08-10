@@ -289,16 +289,28 @@ def check_environment() -> None:
 def preflight() -> None:
     """Fail fast with a clear message if a collection a profile needs isn't ready."""
     check_environment()
-    reqs = collection_requirements(
-        [resolve_profile(p) for p in BENCH.profiles],
-        profile_needs_dense,
-        profile_needs_sparse,
-    )
+    resolved = [resolve_profile(p) for p in BENCH.profiles]
+    reqs = collection_requirements(resolved, profile_needs_dense, profile_needs_sparse)
     base_collections = set(cfg.qdrant_collections)
+    # Derived parent collections, so a missing one reports the profile that needs
+    # it instead of the summary message.
+    parent_collections = {
+        f"{col}{profile.parent_child.parent_collection_suffix}"
+        for profile in resolved
+        if profile.parent_child is not None
+        for col in profile.effective_collections()
+    }
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
                           check_compatibility=False)
     for col, need in sorted(reqs.items()):
         if not client.collection_exists(col):
+            if col in parent_collections:
+                sys.exit(
+                    f"Collection '{col}' not found at {cfg.qdrant_url}.\n"
+                    "A parent-child profile needs it. Without it the expansion is "
+                    "skipped silently and the profile scores exactly like its base "
+                    "profile — build it with the AgoRa parent ingestion (see SETUP.md)."
+                )
             if col not in base_collections:
                 sys.exit(
                     f"Collection '{col}' not found at {cfg.qdrant_url}.\n"
@@ -318,6 +330,13 @@ def preflight() -> None:
                 f"Collection '{col}' has no 'source' payload field — it was not built "
                 "by AgoRa, and CanaR's source filter would return nothing. "
                 "Re-ingest with agora-ingest."
+            )
+        if need["parent_id"] and not pts[0].payload.get("parent_id"):
+            sys.exit(
+                f"Collection '{col}' has no 'parent_id' payload field — a parent-child "
+                "profile needs it to reach the parent passage. Without it the expansion "
+                "is skipped silently and the profile scores exactly like its base "
+                "profile. Re-ingest with the AgoRa parent ingestion (see SETUP.md)."
             )
         params = client.get_collection(col).config.params
         vectors_cfg = params.vectors                 # dict (named) or single config
