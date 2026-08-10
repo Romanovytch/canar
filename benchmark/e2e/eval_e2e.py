@@ -431,9 +431,16 @@ def make_pipeline(search):
 
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.
+        #
+        # `contexts` must be the text the model actually saw, which is what
+        # build_messages puts in the prompt: `generation_text or text`. A
+        # parent-child profile retrieves the child chunk but generates from the
+        # expanded parent passage, so judging against `text` alone would mark
+        # every claim drawn from the surrounding passage as unsupported — and the
+        # better the expansion works, the lower faithfulness would read.
         return PipelineOutput(
             answer=answer,
-            contexts=[hit.text for hit in citations],
+            contexts=[hit.generation_text or hit.text for hit in citations],
             paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
             retrieval_latency_s=retrieval_latency_s,
             generation_latency_s=generation_latency_s,
