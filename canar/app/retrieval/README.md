@@ -74,7 +74,7 @@ RetrievalProfile(
     strategy="parent_child_vector",
     collections=collections,
     dense=DenseRetrievalParams(vector_name="text-dense"),
-    parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
+    parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parents"),
 )
 ```
 

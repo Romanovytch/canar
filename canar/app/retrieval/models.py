@@ -68,7 +68,7 @@ class FusionRetrievalParams:
 
 @dataclass(frozen=True)
 class ParentChildRetrievalParams:
-    parent_collection_suffix: str = "_parent"
+    parent_collection_suffix: str = "_parents"
 
     def __post_init__(self) -> None:
         if not self.parent_collection_suffix:

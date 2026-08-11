@@ -9,7 +9,7 @@ from canar.app.retrieval.models import (
 
 class FakeAdapter:
     def __init__(self):
-        self.existing_collections = {"children_a_parent"}
+        self.existing_collections = {"children_a_parents"}
         self.collection_checks = []
         self.parent_fetches = []
 
@@ -51,11 +51,11 @@ def test_parent_child_expander_fetches_parents_and_populates_generation_text():
 
     expanded = expander.expand(
         hits,
-        ParentChildRetrievalParams(parent_collection_suffix="_parent"),
+        ParentChildRetrievalParams(parent_collection_suffix="_parents"),
     )
 
-    assert adapter.collection_checks == ["children_a_parent", "children_b_parent"]
-    assert adapter.parent_fetches == [("children_a_parent", ["parent-1", "parent-2"])]
+    assert adapter.collection_checks == ["children_a_parents", "children_b_parents"]
+    assert adapter.parent_fetches == [("children_a_parents", ["parent-1", "parent-2"])]
     assert [hit.text for hit in expanded] == ["child one", "child two", "unmapped child"]
     assert [hit.generation_text for hit in expanded] == [
         "parent one text",

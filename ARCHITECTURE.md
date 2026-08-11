@@ -160,7 +160,7 @@ RetrievalProfile(
     dense=DenseRetrievalParams(
         vector_name=cfg.qdrant_dense_vector_name or None,
     ),
-    parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parent"),
+    parent_child=ParentChildRetrievalParams(parent_collection_suffix="_parents"),
 )
 ```
 
@@ -272,7 +272,7 @@ class FusionRetrievalParams:
 
 @dataclass(frozen=True)
 class ParentChildRetrievalParams:
-    parent_collection_suffix: str = "_parent"
+    parent_collection_suffix: str = "_parents"
 
 
 @dataclass(frozen=True)
@@ -361,7 +361,7 @@ No retrieval context or history is added for this agent.
 | Aspect | Detail |
 |---|---|
 | Chat provider & model | OpenAI-compatible client with configurable model name |
-| Chat configurability | `LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL` |
+| Chat configurability | `LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER_NAME` |
 | Streaming method | `chat.completions.create(..., stream=True)` yielding token deltas |
 | Embedding provider | OpenAI-compatible `/embeddings` endpoint |
 | Embedding configurability | `EMBED_API_BASE`, `EMBED_API_KEY`, `EMBED_MODEL` |
@@ -387,6 +387,7 @@ No retrieval context or history is added for this agent.
 | LLM_API_BASE | Base URL for OpenAI-compatible LLM API |
 | LLM_API_KEY | LLM API key |
 | LLM_MODEL | LLM model name |
+| LLM_PROVIDER_NAME | Optional provider name for custom OpenAI-compatible endpoints |
 | EMBED_API_BASE | Base URL for embeddings API |
 | EMBED_API_KEY | Embeddings API key |
 | EMBED_MODEL | Embeddings model name |
