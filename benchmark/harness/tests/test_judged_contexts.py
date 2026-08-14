@@ -70,8 +70,12 @@ def _judged_contexts(hits: list[RetrievalHit]) -> list[str]:
 
 
 def test_expanded_hits_are_judged_against_the_parent_passage():
-    expander = ParentChildExpander(_StubAdapter({"col_parent"}))
-    hits = expander.expand(_hits(), ParentChildRetrievalParams())
+    # Derive the parent collection from the configured suffix rather than
+    # hardcoding it, so the test follows the product default instead of
+    # breaking when it changes.
+    params = ParentChildRetrievalParams()
+    expander = ParentChildExpander(_StubAdapter({f"col{params.parent_collection_suffix}"}))
+    hits = expander.expand(_hits(), params)
 
     # the prompt carries the parent passage, so the judged context must too
     assert PARENT in _prompt_text(hits)
