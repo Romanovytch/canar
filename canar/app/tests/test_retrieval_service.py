@@ -596,19 +596,19 @@ def test_retrieval_service_builds_parent_child_profiles_from_structured_params(
     assert "parent_child" in service.hit_expanders
     assert vector_parent_child.strategy == "simple_vector"
     assert vector_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
+        parent_collection_suffix="_parents",
     )
     assert vector_parent_child.fetch_top_k == 10
     assert vector_parent_child.min_score == 0.75
     assert vector_parent_child.dense == DenseRetrievalParams(vector_name="text-dense")
     assert sparse_parent_child.strategy == "simple_sparse"
     assert sparse_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
+        parent_collection_suffix="_parents",
     )
     assert sparse_parent_child.sparse == SparseRetrievalParams(vector_name="text-sparse")
     assert hybrid_parent_child.strategy == "hybrid"
     assert hybrid_parent_child.parent_child == ParentChildRetrievalParams(
-        parent_collection_suffix="_parent",
+        parent_collection_suffix="_parents",
     )
     assert hybrid_parent_child.fetch_top_k == 10
     assert hybrid_parent_child.min_score == 0.75

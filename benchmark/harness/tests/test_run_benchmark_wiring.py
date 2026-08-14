@@ -133,6 +133,38 @@ questions:
     assert metrics["difficulty"].iloc[0] == "easy"
 
 
+def test_empty_expected_sources_are_nan_and_excluded_from_summary(
+    stub_ragas, tmp_path, capsys
+):
+    yaml_text = """
+dataset_id: d
+questions:
+  - id: scored
+    question: "Scored question?"
+    expected_answer: "Answer."
+    expected_source_files: ["some/path.qmd"]
+  - id: unscored
+    question: "Question with no relevant source?"
+    expected_answer: "No answer in the corpus."
+    expected_source_files: []
+"""
+    ds = tmp_path / "ds.yaml"
+    ds.write_text(yaml_text, encoding="utf-8")
+
+    out_df = _run(ds, tmp_path, "empty-sources")
+    retrieval_cols = ["hit_rate", "mrr", "recall", "precision", "ndcg"]
+    unscored = out_df.loc[out_df["id"] == "unscored"].iloc[0]
+
+    assert unscored[retrieval_cols].isna().all()
+    output = capsys.readouterr().out
+    assert "Retrieval — Hit Rate@k: 100% | MRR: 1.000" in output
+    assert "Retrieval — 1 question(s) excluded (no expected source)" in output
+
+    metrics = pd.read_csv(tmp_path / "empty-sources" / "metrics.csv")
+    saved_unscored = metrics.loc[metrics["id"] == "unscored"].iloc[0]
+    assert saved_unscored[retrieval_cols].isna().all()
+
+
 RESOURCE_COLS = (
     "retrieval_cpu_s",
     "peak_rss_mb",

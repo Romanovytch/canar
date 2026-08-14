@@ -235,10 +235,19 @@ def run_benchmark(
 
     if track_hits and retr_rows:
         ok_rows = [r for r, status in zip(retr_rows, pipeline_statuses) if status == "OK"]
-        if ok_rows:
-            hit_rate = sum(r["hit_rate"] for r in ok_rows) / len(ok_rows)
-            mrr = sum(r["mrr"] for r in ok_rows) / len(ok_rows)
+        scorable_rows = [r for r in ok_rows if pd.notna(r["hit_rate"])]
+        if scorable_rows:
+            hit_rate = sum(r["hit_rate"] for r in scorable_rows) / len(scorable_rows)
+            mrr = sum(r["mrr"] for r in scorable_rows) / len(scorable_rows)
             print(f"Retrieval — Hit Rate@k: {hit_rate:.0%} | MRR: {mrr:.3f}\n")
+        elif ok_rows:
+            print("Retrieval — Hit Rate@k: N/A | MRR: N/A\n")
+        unscorable = len(ok_rows) - len(scorable_rows)
+        if unscorable:
+            print(
+                f"Retrieval — {unscorable} question(s) excluded "
+                "(no expected source)\n"
+            )
         failed = len(retr_rows) - len(ok_rows)
         if failed:
             print(f"Retrieval — {failed} question(s) failed with PIPELINE_ERROR\n")
