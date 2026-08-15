@@ -76,11 +76,7 @@ from bench_config import load_config  # noqa: E402
 # APOSTROPHE NORMALIZATION WORKAROUND: remove this import and unwrap
 # `judge_embeddings` below to restore direct RAGAS OpenAIEmbeddings usage.
 from embedding_normalization import NormalizingEmbeddings  # noqa: E402
-from preflight import (  # noqa: E402
-    collection_requirements,
-    profile_needs_dense,
-    profile_needs_sparse,
-)
+from preflight import collection_requirements, unclassified_profiles  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
 from token_counter import TokenCounter, summarize_token_usage  # noqa: E402
@@ -199,8 +195,53 @@ def resolve_profile(spec):
     )
 
 
-# `profile_needs_dense` / `profile_needs_sparse` live in harness/preflight.py, so
-# they can be unit-tested without importing this script.
+DENSE_PROFILE_NAMES = {
+    "simple_vector",
+    "simple_vector_parent_child",
+    "hybrid",
+    "hybrid_rerank_bge",
+    "hybrid_rerank_qwen_0.6b",
+    "hybrid_rerank_qwen_4b",
+    "hybrid_rerank_qwen_8b",
+    "hybrid_parent_child",
+    "hybrid_parent_child_rerank_bge",
+    "hybrid_parent_child_rerank_qwen_0.6b",
+    "hybrid_parent_child_rerank_qwen_4b",
+    "hybrid_parent_child_rerank_qwen_8b",
+    "hybrid_summary",
+    "hybrid_summary_rerank_bge",
+    "hybrid_summary_rerank_qwen_0.6b",
+    "hybrid_summary_rerank_qwen_4b",
+    "hybrid_summary_rerank_qwen_8b",
+}
+
+SPARSE_PROFILE_NAMES = {
+    "simple_sparse",
+    "simple_sparse_parent_child",
+    "hybrid",
+    "hybrid_rerank_bge",
+    "hybrid_rerank_qwen_0.6b",
+    "hybrid_rerank_qwen_4b",
+    "hybrid_rerank_qwen_8b",
+    "hybrid_parent_child",
+    "hybrid_parent_child_rerank_bge",
+    "hybrid_parent_child_rerank_qwen_0.6b",
+    "hybrid_parent_child_rerank_qwen_4b",
+    "hybrid_parent_child_rerank_qwen_8b",
+    "hybrid_summary",
+    "hybrid_summary_rerank_bge",
+    "hybrid_summary_rerank_qwen_0.6b",
+    "hybrid_summary_rerank_qwen_4b",
+    "hybrid_summary_rerank_qwen_8b",
+}
+
+
+def profile_needs_dense(profile) -> bool:
+    return profile.name in DENSE_PROFILE_NAMES
+
+
+def profile_needs_sparse(profile) -> bool:
+    return profile.name in SPARSE_PROFILE_NAMES
 
 
 BENCH_AGENT_PROFILES = {
@@ -271,6 +312,17 @@ def preflight() -> None:
     """Fail fast with a clear message if a collection a profile needs isn't ready."""
     check_environment()
     resolved = [resolve_profile(p) for p in BENCH.profiles]
+    # A profile in neither name list would be read as needing no vectors, and its
+    # collection checks would be skipped without a word. Say so instead.
+    unclassified = unclassified_profiles(resolved, profile_needs_dense, profile_needs_sparse)
+    if unclassified:
+        sys.exit(
+            f"Profile(s) {sorted(unclassified)} are in neither DENSE_PROFILE_NAMES nor "
+            "SPARSE_PROFILE_NAMES in this file.\n"
+            "Every retrieval strategy queries at least one vector, so a profile in "
+            "neither list has not been classified yet — add it to the list(s) matching "
+            "its strategy, or its collection would go unchecked here and fail mid-run."
+        )
     reqs = collection_requirements(resolved, profile_needs_dense, profile_needs_sparse)
     base_collections = set(cfg.qdrant_collections)
     # Derived parent collections, so a missing one reports the profile that needs

@@ -7,24 +7,29 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-# Which query vectors a profile needs, read from its strategy rather than from a
-# list of profile names. RetrievalService.search decides the same way, so the two
-# cannot drift: a profile added to the product is classified here the moment it
-# exists, with no benchmark-side edit. A name list had to be extended by hand for
-# every new profile, and silently classified the ones it did not know as needing
-# nothing — which skipped their preflight checks.
-DENSE_STRATEGIES = frozenset({"simple_vector", "hybrid"})
-SPARSE_STRATEGIES = frozenset({"simple_sparse", "hybrid"})
 
+def unclassified_profiles(
+    profiles,
+    needs_dense: Callable[[object], bool],
+    needs_sparse: Callable[[object], bool],
+) -> list[str]:
+    """Profiles that neither predicate claims.
 
-def profile_needs_dense(profile) -> bool:
-    """Whether the profile issues a dense query and so needs a dense vector."""
-    return profile.strategy in DENSE_STRATEGIES
+    The benchmark states each profile's vector needs as two lists of names, which
+    have to be extended when a profile is added to the product. A profile absent
+    from both lists is not one that needs no vectors — every strategy queries at
+    least one — it is one nobody has classified yet. Left alone it would be taken
+    as needing nothing, and the checks the preflight exists to make would be
+    skipped for it in silence, surfacing as a crash mid-run instead.
 
-
-def profile_needs_sparse(profile) -> bool:
-    """Whether the profile issues a sparse query and so needs a sparse vector."""
-    return profile.strategy in SPARSE_STRATEGIES
+    This happened: the ``hybrid_summary_rerank_*`` profiles arrived with the
+    summary rerank variants and were absent from both lists.
+    """
+    return [
+        profile.name
+        for profile in profiles
+        if not needs_dense(profile) and not needs_sparse(profile)
+    ]
 
 
 def _blank_requirement() -> dict[str, bool]:

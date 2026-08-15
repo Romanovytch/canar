@@ -6,11 +6,7 @@ the base collection. The suffix used below is only an example."""
 
 from dataclasses import dataclass
 
-from preflight import (
-    collection_requirements,
-    profile_needs_dense,
-    profile_needs_sparse,
-)
+from preflight import collection_requirements, unclassified_profiles
 
 
 @dataclass
@@ -113,32 +109,31 @@ def test_profiles_without_parent_child_require_no_parent_collection():
     assert list(reqs) == ["utilitr_v2"]
 
 
-@dataclass
-class _StrategyProfile:
-    """Duck-types the one field the vector predicates read."""
-    strategy: str
+def test_a_profile_in_both_lists_is_classified():
+    profiles = [_FakeProfile("hybrid", ("utilitr_v2",))]
+    assert unclassified_profiles(profiles, _needs_dense, _needs_sparse) == []
 
 
-def test_vector_needs_follow_the_strategy_not_the_profile_name():
-    """The product decides the same way in RetrievalService.search."""
-    dense = _StrategyProfile("simple_vector")
-    sparse = _StrategyProfile("simple_sparse")
-    hybrid = _StrategyProfile("hybrid")
-
-    assert (profile_needs_dense(dense), profile_needs_sparse(dense)) == (True, False)
-    assert (profile_needs_dense(sparse), profile_needs_sparse(sparse)) == (False, True)
-    assert (profile_needs_dense(hybrid), profile_needs_sparse(hybrid)) == (True, True)
+def test_a_profile_in_one_list_is_classified():
+    """Dense-only and sparse-only profiles are complete answers, not gaps."""
+    profiles = [
+        _FakeProfile("simple_vector", ("utilitr_v2",)),
+        _FakeProfile("simple_sparse", ("utilitr_v2",)),
+    ]
+    assert unclassified_profiles(profiles, _needs_dense, _needs_sparse) == []
 
 
-def test_a_new_profile_is_classified_without_a_benchmark_side_edit():
-    """Regression guard for the drift this replaced.
+def test_a_profile_in_neither_list_is_reported():
+    """The gap this exists to catch.
 
-    Profiles are added to the product regularly — summary and rerank variants,
-    for instance. When the benchmark carried its own list of profile names, a new
-    one was classified as needing no vectors at all, and its preflight checks were
-    skipped in silence. Reading the strategy means the name never has to be known.
+    A profile added to the product but not to the name lists reads as needing no
+    vectors, so its collection checks are skipped in silence and the run fails
+    later instead. It happened with the hybrid_summary_rerank_* profiles.
     """
-    invented = _StrategyProfile("hybrid")  # a profile this test has never heard of
-
-    assert profile_needs_dense(invented)
-    assert profile_needs_sparse(invented)
+    profiles = [
+        _FakeProfile("hybrid", ("utilitr_v2",)),
+        _FakeProfile("hybrid_summary_rerank_bge", ("utilitr_v2",)),
+    ]
+    assert unclassified_profiles(profiles, _needs_dense, _needs_sparse) == [
+        "hybrid_summary_rerank_bge"
+    ]
