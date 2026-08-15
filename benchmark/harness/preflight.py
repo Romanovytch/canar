@@ -7,6 +7,25 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+# Which query vectors a profile needs, read from its strategy rather than from a
+# list of profile names. RetrievalService.search decides the same way, so the two
+# cannot drift: a profile added to the product is classified here the moment it
+# exists, with no benchmark-side edit. A name list had to be extended by hand for
+# every new profile, and silently classified the ones it did not know as needing
+# nothing — which skipped their preflight checks.
+DENSE_STRATEGIES = frozenset({"simple_vector", "hybrid"})
+SPARSE_STRATEGIES = frozenset({"simple_sparse", "hybrid"})
+
+
+def profile_needs_dense(profile) -> bool:
+    """Whether the profile issues a dense query and so needs a dense vector."""
+    return profile.strategy in DENSE_STRATEGIES
+
+
+def profile_needs_sparse(profile) -> bool:
+    """Whether the profile issues a sparse query and so needs a sparse vector."""
+    return profile.strategy in SPARSE_STRATEGIES
+
 
 def _blank_requirement() -> dict[str, bool]:
     return {"dense": False, "sparse": False, "source": False, "parent_id": False}
