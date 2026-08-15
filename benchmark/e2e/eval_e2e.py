@@ -392,8 +392,21 @@ def build_searcher(spec):
     return search
 
 
+WARMUP_QUERY = "warm-up"
+
+
 def make_pipeline(search):
     """Wrap one profile's retrieval into a benchmark pipeline = one product turn."""
+    # One discarded query per profile, before any turn is timed. Models load
+    # lazily on first use — a reranker reads its weights in-process, and the
+    # embedding server loads its model if it has gone idle — so without this the
+    # cost lands on whichever question happened to run first. Measured on
+    # hybrid_rerank_bge: mean retrieval latency 849 ms without the warm-up
+    # against 190 ms with it, the difference being a single 5.4 s first turn.
+    # That made the reported latency a function of position in config.yaml
+    # rather than of the strategy.
+    search(WARMUP_QUERY)
+
     def ask_canar(question: str) -> PipelineOutput:
         # retrieve (timed for the Latency metric; resource-probed when enabled)
         with probe(MEASURE_RESOURCES) as r_usage:
