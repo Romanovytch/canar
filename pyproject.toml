@@ -24,6 +24,8 @@ dependencies = [
 [project.scripts]
 # Launch Streamlit app with: `canar`
 canar = "canar.launch:main"
+# Tool diagnostic CLI: `canar-tools`
+canar-tools = "canar.app.bot_tools.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

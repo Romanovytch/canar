@@ -1,6 +1,7 @@
 import logging
 
 from canar.app.bot_tools.base import BaseToolProvider
+from canar.app.bot_tools.echo_provider import EchoToolProvider
 from canar.app.bot_tools.errors import ProviderUnavailable
 from canar.app.bot_tools.local_provider import LocalPythonProvider
 from canar.app.bot_tools.mcp_provider import MCPProvider
@@ -15,7 +16,7 @@ logger = logging.getLogger("ToolProviderFactory")
 class ToolProviderFactory:
     """
     Fabrique centralisant la création et l'instanciation des adaptateurs de providers d'outils
-    (MCP, Python Local, etc.) à partir de leur modèle de configuration Pydantic.
+    (MCP, Python Local, Echo, etc.) à partir de leur modèle de configuration Pydantic.
     """
 
     @staticmethod
@@ -42,6 +43,8 @@ class ToolProviderFactory:
 
             elif isinstance(config, LocalProviderConfig):
                 logger.info(f"Création du provider local '{provider_id}'...")
+                if provider_id == "echo":
+                    return EchoToolProvider(provider_id=provider_id)
                 return LocalPythonProvider(provider_id=provider_id)
 
             else:
