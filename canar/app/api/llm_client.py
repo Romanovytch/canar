@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from openai import OpenAI
 
@@ -16,9 +17,11 @@ class ChatClient:
         temperature: float = 0.2,
         top_p: float = 1.0,
         max_tokens: int = 2048,
-    ) -> Iterable[str]:
+        allowed_tools_schemas: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> Iterable[Any]:
 
-        api_args = {
+        api_args: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
@@ -27,11 +30,13 @@ class ChatClient:
             "stream": True,
         }
 
+        if allowed_tools_schemas and len(allowed_tools_schemas) > 0:
+            api_args["tools"] = allowed_tools_schemas
+            api_args["tool_choice"] = tool_choice or "auto"
+
         resp = self.client.chat.completions.create(**api_args)
         for chunk in resp:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield delta.content
+            yield chunk
 
     def sync_chat(
         self,
@@ -39,10 +44,11 @@ class ChatClient:
         temperature: float = 0.2,
         top_p: float = 1.0,
         max_tokens: int = 2048,
-        allowed_tools_schemas: list[dict] = None,
+        allowed_tools_schemas: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
     ):
 
-        api_args = {
+        api_args: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
@@ -53,6 +59,6 @@ class ChatClient:
 
         if allowed_tools_schemas and len(allowed_tools_schemas) > 0:
             api_args["tools"] = allowed_tools_schemas
-            api_args["tool_choice"] = "auto"
+            api_args["tool_choice"] = tool_choice or "auto"
 
         return self.client.chat.completions.create(**api_args)
