@@ -60,9 +60,7 @@ def build_retrieval_profiles(
     hybrid_summary = replace(
         hybrid,
         name="hybrid_summary",
-        fusion=FusionRetrievalParams(
-            weights={"dense": 3.0, "sparse": 1.0}
-        ),
+        fusion=FusionRetrievalParams(weights={"dense": 3.0, "sparse": 1.0}),
         summary=SummaryRetrievalParams(collection_suffix="_summaries"),
     )
 
@@ -119,7 +117,5 @@ def build_retrieval_profiles(
             rerank=replace(default_rerank, model=model),
         )
         profiles[summary_rerank_profile.name] = summary_rerank_profile
-                
-        
 
     return profiles

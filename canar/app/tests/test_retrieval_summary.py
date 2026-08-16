@@ -82,7 +82,7 @@ class RecordingQdrantAdapter:
         ]
 
 
-def test_summary_params_require_hybrid_non_empty_suffix_and_no_parent():
+def test_summary_params_require_hybrid_non_empty_suffix_and_invalid_strategy():
     with pytest.raises(ValueError, match="requires strategy='hybrid'"):
         RetrievalProfile(
             name="invalid",
@@ -124,11 +124,10 @@ def test_summaries_profile_is_registered_and_resolves_collections():
     assert summary.summary == SummaryRetrievalParams(collection_suffix="_summaries")
     assert summary.fusion == FusionRetrievalParams(
         weights={"dense": 3.0, "sparse": 1.0},
-        output_top_k=2,
     )
     assert summary.effective_collections() == (
-        "docs_a_summary",
-        "docs_b_summary",
+        "docs_a_summaries",
+        "docs_b_summaries",
     )
     assert profiles["hybrid"].effective_collections() == ("docs_a", "docs_b")
 
@@ -154,7 +153,7 @@ def test_service_runs_both_hybrid_paths_against_summary_collections(monkeypatch)
     hits = service.search("generic_agent", "question")
 
     adapter = RecordingQdrantAdapter.instances[0]
-    expected_collections = ["docs_a_summary", "docs_b_summary"]
+    expected_collections = ["docs_a_summaries", "docs_b_summaries"]
     assert [call["collection"] for call in adapter.dense_calls] == expected_collections
     assert [call["collection"] for call in adapter.sparse_calls] == expected_collections
     assert {call["vector_name"] for call in adapter.dense_calls} == {"text-dense"}
@@ -164,8 +163,8 @@ def test_service_runs_both_hybrid_paths_against_summary_collections(monkeypatch)
     assert {hit.collection for hit in hits} <= set(expected_collections)
     fusion = service.profiles["hybrid_summary"].fusion
     assert fusion is not None
-    assert fusion.output_top_k is not None
-    assert len(hits) <= fusion.output_top_k
+    assert fusion.output_top_k is None
+    assert len(hits) <= service.profiles["hybrid_summary"].output_top_k
 
 
 @pytest.mark.parametrize(
