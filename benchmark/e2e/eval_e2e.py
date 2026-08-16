@@ -281,7 +281,10 @@ judge_embeddings = NormalizingEmbeddings(
         openai_api_base=cfg.embed_base,
         openai_api_key=cfg.embed_key or "EMPTY",
         check_embedding_ctx_length=False,  # send raw strings; Ollama rejects token arrays
-    )
+    ),
+    # Shared across runs on purpose: the failures are rare and intermittent, so
+    # one accumulating file is what makes a pattern visible between them.
+    failure_log=HERE / "results" / "embedding_failures.jsonl",
 )
 
 
