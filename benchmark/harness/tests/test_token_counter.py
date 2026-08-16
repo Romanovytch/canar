@@ -63,3 +63,37 @@ def test_summarize_token_usage_computes_avg_min_max_total():
     assert dense["input_tokens_max"] == 200
     assert dense["input_tokens_total"] == 300
     assert dense["total_tokens_total"] == 340
+
+
+def test_summarize_token_usage_skips_a_failed_question():
+    """A failed question writes "ERROR" in these columns, not a count.
+
+    dropna() keeps that string, and summing it raises — at the very last step of
+    the run, after every profile has already been scored. This happened: three
+    profiles hit a GPU error on one question and the whole comparison table was
+    lost. The counts of the questions that did run are still meaningful, so the
+    failed one is skipped and the rest reported.
+    """
+    df = pd.DataFrame(
+        {
+            "input_tokens": [100, "ERROR", 200],
+            "output_tokens": [10, "ERROR", 30],
+            "total_tokens": [110, "ERROR", 230],
+        }
+    )
+
+    row = summarize_token_usage([("hybrid", df)]).iloc[0]
+
+    assert row["input_tokens_avg"] == 150.0    # the two that ran, not three
+    assert row["input_tokens_min"] == 100
+    assert row["input_tokens_max"] == 200
+    assert row["input_tokens_total"] == 300
+
+
+def test_summarize_token_usage_drops_a_profile_column_that_only_failed():
+    """Every question failing leaves nothing to average, and no key for it."""
+    df = pd.DataFrame({"input_tokens": ["ERROR", "ERROR"]})
+
+    row = summarize_token_usage([("hybrid", df)]).iloc[0]
+
+    assert "input_tokens_avg" not in row or pd.isna(row["input_tokens_avg"])
