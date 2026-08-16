@@ -219,3 +219,113 @@ def test_no_resource_fields_no_columns(stub_ragas, tmp_path):
     out_df = _run(csv, tmp_path, "nores")
     for col in RESOURCE_COLS:
         assert col not in out_df.columns
+
+
+def test_an_empty_answer_is_scored_zero_and_marked(stub_ragas, tmp_path):
+    """A pipeline that runs but answers nothing is a failure to answer.
+
+    RAGAS leaves faithfulness undefined for it, which would drop the question
+    from the mean and grade the profile only on the questions it did answer —
+    flattering exactly the profiles that failed. The stub scores every row 1.0,
+    so a 0 here can only come from the override.
+    """
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+
+    def empty_pipeline(question):
+        return PipelineOutput(
+            answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"]
+        )
+
+    out_df = run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=csv),
+        pipeline=empty_pipeline,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label="empty",
+        group_dir=tmp_path,
+    )
+
+    assert out_df["answer_status"].iloc[0] == "EMPTY"
+    assert out_df["faithfulness"].iloc[0] == 0.0
+    # it ran, so it is not a benchmark error
+    assert out_df["pipeline_status"].iloc[0] == "OK"
+
+
+def test_a_normal_answer_keeps_its_score(stub_ragas, tmp_path):
+    """The override must not touch the rows that did answer."""
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+    out_df = _run(csv, tmp_path, "normal")
+
+    assert out_df["answer_status"].iloc[0] == "OK"
+    assert out_df["faithfulness"].iloc[0] == 1.0
+
+
+def test_an_empty_answer_is_not_reported_as_a_pipeline_error(stub_ragas, tmp_path):
+    """The two statuses mean different things and must stay apart: ERROR is the
+    benchmark breaking, EMPTY is the product failing to answer. Only the second
+    is a result."""
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+
+    def failing_pipeline(question):
+        raise RuntimeError("boom")
+
+    out_df = run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=csv),
+        pipeline=failing_pipeline,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label="err",
+        group_dir=tmp_path,
+    )
+
+    assert out_df["pipeline_status"].iloc[0] == "ERROR"
+    assert out_df["answer_status"].iloc[0] == "OK"   # never answered, never empty
+
+
+def test_answer_status_reaches_the_saved_csv(stub_ragas, tmp_path):
+    """The column exists to be read later, so the returned frame is not enough.
+
+    It was added to the frame and to meta_cols, which is what keeps a column out
+    of the score means — and that also kept it out of metrics.csv, where it is
+    the only place anyone would look.
+    """
+    csv = tmp_path / "ds.csv"
+    csv.write_text(
+        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
+    )
+
+    def empty_pipeline(question):
+        return PipelineOutput(
+            answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"]
+        )
+
+    run_benchmark(
+        name="t",
+        dataset=DatasetSpec(path=csv),
+        pipeline=empty_pipeline,
+        metrics=[],
+        judge_llm=None,
+        judge_embeddings=None,
+        results_dir=tmp_path,
+        file_label="saved",
+        group_dir=tmp_path,
+    )
+
+    saved = pd.read_csv(tmp_path / "saved" / "metrics.csv")
+    assert saved["answer_status"].iloc[0] == "EMPTY"
+    assert saved["faithfulness"].iloc[0] == 0.0
