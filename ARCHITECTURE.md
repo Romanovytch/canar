@@ -170,9 +170,10 @@ reranker variants are derived from canonical profiles with `dataclasses.replace`
 reranker model variants come from a small model-name mapping.
 
 `hybrid_summary` is derived from canonical `hybrid`. Its `summary` block resolves
-each configured collection to `<collection>_summary`; fusion favors dense semantic
-retrieval with weights `{"dense": 3.0, "sparse": 1.0}` and returns two results.
-It is the retrieval profile mapped to `generic_agent`.
+each configured collection to `<collection>_summaries`; fusion favors dense semantic
+retrieval with weights `{"dense": 3.0, "sparse": 1.0}` and inherits the root output
+limit. Summary rerank variants are generated for each configured reranker model.
+`hybrid_summary` is the retrieval profile mapped to `generic_agent`.
 
 Sparse and hybrid retrieval assume compatible sparse vectors already exist in Qdrant. The sparse vector model and named-vector configuration must match the ingestion pipeline.
 
