@@ -8,18 +8,21 @@ from canar.app.bot_tools.errors import (
     ToolNotFound,
 )
 from canar.app.bot_tools.models import ToolDefinition, ToolResult
+from canar.app.chatbots.chatbot_config_file import AllowedToolConfig
 
 logger = logging.getLogger("ToolRegistry")
 
 
 class ToolRegistry:
     """
-    Registre central gérant l'enregistrement des providers, la découverte des outils
-    et le routage des appels vers le bon provider.
+    Registre central gérant l'enregistrement des providers, la découverte des outils,
+    le cache de découverte, le routage des appels et le filtrage des droits par chatbot.
     """
 
     def __init__(self):
         self._providers: dict[str, BaseToolProvider] = {}
+        # Cache en mémoire des schémas découverts : provider_id -> list[ToolDefinition]
+        self._tools_cache: dict[str, list[ToolDefinition]] = {}
 
     def register_provider(self, provider_id: str, provider: BaseToolProvider) -> None:
         """Enregistre un fournisseur d'outils au registre."""
@@ -30,6 +33,17 @@ class ToolRegistry:
 
         self._providers[provider_id] = provider
         logger.info(f"Provider '{provider_id}' enregistré dans le registre.")
+
+    def invalidate_cache(self, provider_id: str | None = None) -> None:
+        """
+        Invalide le cache de découverte pour un provider spécifique ou pour tous les providers.
+        """
+        if provider_id:
+            self._tools_cache.pop(provider_id, None)
+            logger.info(f"Cache des outils invalidé pour le provider '{provider_id}'.")
+        else:
+            self._tools_cache.clear()
+            logger.info("Cache de tous les outils invalidé.")
 
     async def initialize_all(self) -> None:
         """Initialise tous les providers enregistrés."""
@@ -46,7 +60,7 @@ class ToolRegistry:
         """
         Récupère la liste de tous les ToolDefinition enregistrés
         (filtrés optionnellement par provider).
-        Applique la convention de nommage public : provider_id__tool_name.
+        Applique la mise en cache et la convention de nommage public : provider_id__tool_name.
         """
         all_definitions: list[ToolDefinition] = []
 
@@ -54,8 +68,15 @@ class ToolRegistry:
             if allowed_providers is not None and pid not in allowed_providers:
                 continue
 
+            # Vérifie si les outils de ce provider sont déjà en cache
+            if pid in self._tools_cache:
+                all_definitions.extend(self._tools_cache[pid])
+                continue
+
+            # Sinon, interroge le provider et met en cache
             try:
                 raw_tools = await provider.list_tools()
+                cached_tools: list[ToolDefinition] = []
                 for tool in raw_tools:
                     # Garantir que le nom exposé est bien préfixé par provider_id__
                     full_name = (
@@ -67,11 +88,73 @@ class ToolRegistry:
                         description=tool.description,
                         input_schema=tool.input_schema,
                     )
-                    all_definitions.append(prefixed_tool)
+                    cached_tools.append(prefixed_tool)
+
+                self._tools_cache[pid] = cached_tools
+                all_definitions.extend(cached_tools)
             except Exception as e:
                 logger.error(f"Erreur lors de la récupération des outils du provider '{pid}' : {e}")
 
         return all_definitions
+
+    # --- MÉTHODES SPÉCIFIQUES DE SÉCURITÉ ET FILTRAGE PAR CHATBOT (Ticket III-3) ---
+
+    async def list_tools_for_chatbot(
+        self, allowed_tools: list[AllowedToolConfig | str]
+    ) -> list[ToolDefinition]:
+        """
+        Retourne uniquement la liste des ToolDefinition autorisés pour un chatbot spécifique.
+        """
+        allowed_provider_ids = []
+        allowlist_by_provider: dict[str, list[str]] = {}
+
+        for item in allowed_tools:
+            if isinstance(item, str):
+                allowed_provider_ids.append(item)
+                allowlist_by_provider[item] = []  # Liste vide = tous les outils du provider autorisés
+            elif isinstance(item, AllowedToolConfig):
+                allowed_provider_ids.append(item.provider)
+                allowlist_by_provider[item.provider] = item.tools
+
+        # Récupère la liste globale des outils pour les providers autorisés (avec gestion du cache)
+        tools_from_providers = await self.list_all_tools(allowed_providers=allowed_provider_ids)
+
+        filtered_tools = []
+        for tool in tools_from_providers:
+            pid = tool.provider_id
+            specific_tools = allowlist_by_provider.get(pid, [])
+            actual_tool_name = tool.name.replace(f"{pid}__", "")
+
+            # Si aucune restriction spécifique d'outil, ou si l'outil est dans l'allowlist
+            if not specific_tools or actual_tool_name in specific_tools or tool.name in specific_tools:
+                filtered_tools.append(tool)
+
+        return filtered_tools
+
+    async def execute_tool_for_chatbot(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        allowed_tools: list[AllowedToolConfig | str],
+        call_id: str | None = None,
+    ) -> ToolResult:
+        """
+        Vérifie sans faille que l'outil est autorisé pour le chatbot courant avant de l'exécuter.
+        Refuse et bloque l'exécution si l'outil n'est pas dans l'allowlist du chatbot.
+        """
+        available_tools = await self.list_tools_for_chatbot(allowed_tools)
+        allowed_names = [t.name for t in available_tools]
+
+        if tool_name not in allowed_names:
+            logger.warning(
+                f"[Sécurité Accès Refusé] Tentative d'exécution de l'outil non autorisé '{tool_name}'."
+            )
+            pid = tool_name.split("__")[0] if "__" in tool_name else None
+            raise ToolNotFound(tool_name=tool_name, provider_id=pid)
+
+        return await self.execute_tool(tool_name=tool_name, arguments=arguments, call_id=call_id)
+
+    # --- MÉTHODES GLOBALES D'EXÉCUTION ET NETTOYAGE ---
 
     async def execute_tool(
         self, tool_name: str, arguments: dict[str, Any], call_id: str | None = None
@@ -101,7 +184,8 @@ class ToolRegistry:
             raise
 
     async def cleanup_all(self) -> None:
-        """Ferme tous les providers enregistrés."""
+        """Ferme tous les providers enregistrés et réinitialise le cache."""
+        self.invalidate_cache()
         for pid, provider in self._providers.items():
             try:
                 await provider.close()

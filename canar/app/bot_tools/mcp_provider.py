@@ -5,26 +5,70 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from canar.app.bot_tools.base import BaseToolProvider
+from canar.app.bot_tools.errors import ProviderUnavailable
 from canar.app.bot_tools.models import ToolDefinition, ToolResult
 
 logger = logging.getLogger("MCPProvider")
 
 
 class MCPProvider(BaseToolProvider):
-    def __init__(self, provider_id: str, server_url: str):
+    """
+    Adaptateur de provider pour les serveurs MCP distants (Model Context Protocol)
+    utilisant le transport Streamable HTTP.
+    """
+
+    def __init__(
+        self,
+        provider_id: str,
+        server_url: str,
+        timeout_seconds: float = 15.0,
+        read_timeout_seconds: float = 60.0,
+        headers: dict[str, str] | None = None,
+    ):
         self.provider_id = provider_id
         self.server_url = server_url
-        self.session = None
+        self.timeout_seconds = timeout_seconds
+        self.read_timeout_seconds = read_timeout_seconds
+        self.headers = headers or {}
+        self.session: ClientSession | None = None
         self._client_context = None
 
     async def initialize(self):
-        logger.info(f"Connexion au MCP {self.provider_id} ({self.server_url})...")
-        self._client_context = streamable_http_client(self.server_url)
-        read_stream, write_stream = await self._client_context.__aenter__()
+        logger.info(f"Connexion au serveur MCP '{self.provider_id}' ({self.server_url})...")
+        try:
+            import httpx
 
-        self.session = ClientSession(read_stream, write_stream)
-        await self.session.__aenter__()
-        await self.session.initialize()
+            custom_timeout = httpx.Timeout(
+                timeout=self.timeout_seconds,
+                read=self.read_timeout_seconds,
+            )
+
+            # Masquage des headers sensibles pour les logs
+            safe_headers = {
+                k: ("***" if any(s in k.lower() for s in ["auth", "key", "token", "secret"]) else v)
+                for k, v in self.headers.items()
+            }
+            logger.debug(f"Headers initialisés pour '{self.provider_id}': {safe_headers}")
+
+            self._client_context = streamable_http_client(
+                self.server_url,
+                timeout=custom_timeout,
+                headers=self.headers,
+            )
+            read_stream, write_stream = await self._client_context.__aenter__()
+
+            self.session = ClientSession(read_stream, write_stream)
+            await self.session.__aenter__()
+            await self.session.initialize()
+            logger.info(f"Session MCP '{self.provider_id}' connectée et initialisée avec succès.")
+
+        except Exception as e:
+            clean_err = str(e)
+            for secret in self.headers.values():
+                if secret and len(secret) > 3:
+                    clean_err = clean_err.replace(secret, "***")
+            logger.error(f"Échec de connexion au MCP '{self.provider_id}' : {clean_err}")
+            raise ProviderUnavailable(provider_id=self.provider_id, reason=clean_err) from e
 
     async def list_tools(self) -> list[ToolDefinition]:
         if not self.session:
@@ -33,32 +77,52 @@ class MCPProvider(BaseToolProvider):
             )
             return []
 
-        response = await self.session.list_tools()
-        definitions = []
+        try:
+            response = await self.session.list_tools()
+            definitions = []
 
-        for tool in response.tools:
-            definitions.append(
-                ToolDefinition(
-                    provider_id=self.provider_id,
-                    name=tool.name,
-                    description=tool.description or "",
-                    input_schema=tool.input_schema or {},
+            for tool in response.tools:
+                definitions.append(
+                    ToolDefinition(
+                        provider_id=self.provider_id,
+                        name=tool.name,
+                        description=tool.description or "",
+                        input_schema=tool.input_schema or {},
+                    )
                 )
-            )
 
-        return definitions
+            return definitions
+        except Exception as e:
+            logger.error(f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {e}")
+            raise ProviderUnavailable(provider_id=self.provider_id, reason=str(e)) from e
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        if not self.session:
+            raise ProviderUnavailable(provider_id=self.provider_id, reason="Session MCP non initialisée.")
+
         actual_name = name.replace(f"{self.provider_id}__", "")
 
-        result = await self.session.call_tool(actual_name, arguments=arguments)
-        extracted_text = [c.text for c in result if c.type == "text"]
-        content = "\n".join(extracted_text)
+        try:
+            result = await self.session.call_tool(actual_name, arguments=arguments)
+            extracted_text = [c.text for c in result if c.type == "text"]
+            content = "\n".join(extracted_text)
 
-        return ToolResult(content=content, is_error=False)
+            return ToolResult(content=content, is_error=False)
+        except Exception as e:
+            logger.error(f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {e}")
+            raise
 
     async def close(self):
         if self.session:
-            await self.session.__aexit__(None, None, None)
+            try:
+                await self.session.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self.session = None
+
         if self._client_context:
-            await self._client_context.__aexit__(None, None, None)
+            try:
+                await self._client_context.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self._client_context = None

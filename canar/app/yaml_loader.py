@@ -5,8 +5,7 @@ import yaml
 from pydantic import ValidationError
 from sqlmodel import Session
 
-from canar.app.bot_tools.local_provider import LocalPythonProvider
-from canar.app.bot_tools.mcp_provider import MCPProvider
+from canar.app.bot_tools.factory import ToolProviderFactory
 from canar.app.bot_tools.registry import ToolRegistry
 from canar.app.bot_tools.tool_config import ToolProvidersConfig
 from canar.app.chatbots.chatbot_config import ChatbotConfig
@@ -19,7 +18,7 @@ def load_bot_tools_on_boot(
     yaml_path: str | Path,
 ) -> tuple[ToolRegistry, ToolProvidersConfig]:
     """
-    Charge le fichier `tools_config.yaml`, instancie les providers locaux et MCP,
+    Charge le fichier `tools_config.yaml`, instancie les providers via ToolProviderFactory,
     et les enregistre dans le ToolRegistry.
     """
     registry = ToolRegistry()
@@ -46,15 +45,21 @@ def load_bot_tools_on_boot(
         logger.error(f"Erreur lors du chargement de {yaml_path} : {e}")
         return registry, providers_config
 
-    # Instanciation des providers locaux
-    for pid, _local_config in providers_config.local.items():
-        provider = LocalPythonProvider(provider_id=pid)
-        registry.register_provider(pid, provider)
+    # Instanciation des providers locaux via ToolProviderFactory
+    for pid, local_config in providers_config.local.items():
+        try:
+            provider = ToolProviderFactory.create_provider(pid, local_config)
+            registry.register_provider(pid, provider)
+        except Exception as e:
+            logger.warning(f"[Mode Dégradé] Provider local '{pid}' ignoré : {e}")
 
-    # Instanciation des providers MCP
+    # Instanciation des providers MCP via ToolProviderFactory
     for pid, mcp_config in providers_config.mcp.items():
-        provider = MCPProvider(provider_id=pid, server_url=mcp_config.url)
-        registry.register_provider(pid, provider)
+        try:
+            provider = ToolProviderFactory.create_provider(pid, mcp_config)
+            registry.register_provider(pid, provider)
+        except Exception as e:
+            logger.warning(f"[Mode Dégradé] Provider MCP '{pid}' ignoré : {e}")
 
     return registry, providers_config
 
