@@ -10,7 +10,7 @@ run:                         # how the benchmark runs
   dataset: datasets/utilitr_questions.csv   # CSV or YAML
   agent: r_helpdesk
   limit: null                # null = all questions; int = quick subset
-  judge_model: qwen2.5:7b    # RAGAS judge; null = use the product LLM
+  judge_model: gemma3:12b    # RAGAS judge; null = use the product LLM
   gen_max_tokens: 8192       # generation budget (see note below)
   measure_resources: false   # true = also measure CPU/memory/GPU per phase
 
@@ -122,7 +122,9 @@ without a GPU the run-context GPU fields are simply absent).
 ## Notes
 
 - `judge_model`: the local reasoning model (`qwen3.5`) is slow and times out as
-  a judge; a non-reasoning one (`qwen2.5:7b`) scores in seconds.
+  a judge, so this must be a non-reasoning one. `gemma3:12b` scores in seconds.
+  `qwen2.5:7b` is faster still but answers the statement step with the NLI
+  schema on some answers, losing their faithfulness score every run.
 - `gen_max_tokens`: `qwen3.5` spends a hidden budget "thinking" before it
   answers, so the app's default of 2048 returns empty answers on many
   questions. Keep this high.

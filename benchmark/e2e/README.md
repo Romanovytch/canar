@@ -53,9 +53,9 @@ cd /home/cereq/opt/pedro/agora && source .venv/bin/activate
 agora-ingest --sources-config-path sources.yaml --source utilitr \
              --collection utilitr_v1 --dotenv-path .env --drop-collection
 
-# 2. the benchmark — use a fast, non-reasoning judge to avoid timeouts
+# 2. the benchmark — the judge comes from config.yaml; JUDGE_MODEL overrides it
 cd /home/cereq/opt/pedro/canar/benchmark && source .venv/bin/activate
-JUDGE_MODEL=qwen2.5:7b python e2e/eval_e2e.py
+python e2e/eval_e2e.py
 ```
 
 Select a benchmark YAML and retrieval-metric cutoff from the command line. Relative config paths are resolved from the current working directory:
@@ -78,9 +78,14 @@ Each run lands in a timestamped folder under `e2e/results/` (gitignored):
   before it answers, so the app's default 2048 returns **empty** answers
   (`finish_reason=length`) on many questions. Keep this high. *(This is also a
   latent product bug: `main.py`'s 2048 default hits the same wall.)*
-- `JUDGE_MODEL` (default = product LLM) — the RAGAS judge. Point it at a fast
-  **non-reasoning** model (`qwen2.5:7b`): the reasoning 9B judge times out
-  (≈hours, mostly `NaN`); `qwen2.5:7b` scores all 12 in minutes.
+- `JUDGE_MODEL` (default: `config.yaml`, then the product LLM) — the RAGAS
+  judge, and it must be a **non-reasoning** model: the reasoning 9B times out
+  (≈hours, mostly `NaN`). `gemma3:12b` is the current choice. `qwen2.5:7b` was
+  used before and is fast, but on some answers it returns the NLI schema
+  (`statement`/`reason`/`verdict`) where the statement step expects plain
+  strings — valid JSON, wrong shape, so RAGAS's repair pass cannot fix it and
+  the question loses its faithfulness score. It is deterministic, so the same
+  answers fail every run.
 - `limit` in the `DatasetSpec` — subset for a quick pass.
 
 Retrieval knobs (`top_k`, source filter, pruning) live in the retrieval

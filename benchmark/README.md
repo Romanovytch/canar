@@ -58,8 +58,9 @@ retrieved context). Knobs live at the top of each script; key ones for `e2e`:
 - `GEN_MAX_TOKENS` (default 8192) — `qwen3.5` is a *reasoning* model and burns
   a hidden token budget before answering; the app's default 2048 returns empty
   answers on many questions, so keep this high.
-- `JUDGE_MODEL` (default = product LLM) — point at a fast non-reasoning model
-  (`qwen2.5:7b`) so the RAGAS judge doesn't time out.
+- `JUDGE_MODEL` (default: `config.yaml`, then the product LLM) — a non-reasoning
+  model, so the RAGAS judge doesn't time out. Currently `gemma3:12b`; see
+  `e2e/README.md` for why `qwen2.5:7b` was dropped.
 
 ## Gotchas (learned the hard way)
 
