@@ -5,7 +5,7 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from canar.app.bot_tools.base import BaseToolProvider
-from canar.app.bot_tools.errors import ProviderUnavailable
+from canar.app.bot_tools.errors import ProviderUnavailable, ToolExecutionError
 from canar.app.bot_tools.models import ToolDefinition, ToolResult
 
 logger = logging.getLogger("MCPProvider")
@@ -50,10 +50,14 @@ class MCPProvider(BaseToolProvider):
             }
             logger.debug(f"Headers initialisés pour '{self.provider_id}': {safe_headers}")
 
-            self._client_context = streamable_http_client(
-                self.server_url,
+            httpx_client = httpx.AsyncClient(
                 timeout=custom_timeout,
                 headers=self.headers,
+            )
+
+            self._client_context = streamable_http_client(
+                self.server_url,
+                http_client=httpx_client,
             )
             read_stream, write_stream = await self._client_context.__aenter__()
 
@@ -78,25 +82,44 @@ class MCPProvider(BaseToolProvider):
             return []
 
         try:
-            response = await self.session.list_tools()
-            definitions = []
+            definitions: list[ToolDefinition] = []
+            cursor: str | None = None
 
-            for tool in response.tools:
-                definitions.append(
-                    ToolDefinition(
-                        provider_id=self.provider_id,
-                        name=tool.name,
-                        description=tool.description or "",
-                        input_schema=tool.input_schema or {},
+            # Boucle de pagination pour parcourir tous les curseurs `nextCursor`
+            while True:
+                if cursor:
+                    response = await self.session.list_tools(cursor=cursor)
+                else:
+                    response = await self.session.list_tools()
+
+                for tool in response.tools:
+                    definitions.append(
+                        ToolDefinition(
+                            provider_id=self.provider_id,
+                            name=tool.name,
+                            description=tool.description or "",
+                            input_schema=tool.input_schema or {},
+                        )
                     )
-                )
 
-            return definitions
-        except Exception as e:
-            logger.error(
-                f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {e}"
+                cursor = getattr(response, "nextCursor", None)
+                if not cursor:
+                    break
+
+            logger.info(
+                f"[MCP '{self.provider_id}'] {len(definitions)} outil(s) découvert(s) au total."
             )
-            raise ProviderUnavailable(provider_id=self.provider_id, reason=str(e)) from e
+            return definitions
+
+        except Exception as e:
+            clean_err = str(e)
+            for secret in self.headers.values():
+                if secret and len(secret) > 3:
+                    clean_err = clean_err.replace(secret, "***")
+            logger.error(
+                f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {clean_err}"
+            )
+            raise ProviderUnavailable(provider_id=self.provider_id, reason=clean_err) from e
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         if not self.session:
@@ -107,16 +130,38 @@ class MCPProvider(BaseToolProvider):
         actual_name = name.replace(f"{self.provider_id}__", "")
 
         try:
-            result = await self.session.call_tool(actual_name, arguments=arguments)
-            extracted_text = [c.text for c in result if c.type == "text"]
-            content = "\n".join(extracted_text)
+            raw_result = await self.session.call_tool(actual_name, arguments=arguments)
 
-            return ToolResult(content=content, is_error=False)
-        except Exception as e:
-            logger.error(
-                f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {e}"
+            text_parts = []
+            structured_data = getattr(raw_result, "structuredContent", None)
+
+            if hasattr(raw_result, "content") and raw_result.content:
+                for item in raw_result.content:
+                    if hasattr(item, "text") and item.text:
+                        text_parts.append(item.text)
+                    elif hasattr(item, "type"):
+                        text_parts.append(f"[{item.type} content]")
+
+            content_text = (
+                "\n".join(text_parts) if text_parts else "Aucun contenu textuel renvoyé par l'outil."
             )
-            raise
+            is_error = bool(getattr(raw_result, "isError", False))
+
+            return ToolResult(
+                content=content_text,
+                structured_content=structured_data,
+                is_error=is_error,
+            )
+
+        except Exception as e:
+            clean_err = str(e)
+            for secret in self.headers.values():
+                if secret and len(secret) > 3:
+                    clean_err = clean_err.replace(secret, "***")
+            logger.error(
+                f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {clean_err}"
+            )
+            raise ToolExecutionError(tool_name=name, original_error=clean_err) from e
 
     async def close(self):
         if self.session:
