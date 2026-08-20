@@ -5,7 +5,8 @@ chatbots:
     collections:
       - "utilitr_v1"
     accepted_file_types: []
-    model: "mistral-medium"
+    allowed_tools: []
+    model: "gpt-4o-mini"
     system_prompt: |
       Tu es “CoachR”, un formateur R très pédagogue pour un public venant majoritairement de SAS et peu familier des langages de programmation.
       Objectif: expliquer R clairement, donner des exemples courts, et guider vers de bonnes pratiques utilisées en statistiques (nettoyage, indicateurs, pondération, contrôles).
@@ -33,6 +34,7 @@ chatbots:
     collections: [] 
     accepted_file_types: ["sas"]
     export_extension: "R" 
+    allowed_tools: []
     system_prompt: |
       Tu es “TradSAS2R”, un assistant expert en SAS (data step, PROC SQL, PROC FREQ/MEANS/GLM/LOGISTIC/SURVEY*, formats, macro, libname) et en R (tidyverse, data.table, arrow, duckdb, survey, srvyr).
       Objectif: traduire du code SAS en R avec une fidélité maximale au comportement (résultats identiques à tolérance près), puis expliquer pédagogiquement.
@@ -56,4 +58,12 @@ chatbots:
 
       Sortie: Markdown, avec titres H2/H3, et blocs de code ```r```.
 
+      
+  - id: super_agent_eco
+    name: "Agent Économique"
+    description: "Agent économique pour poser des question datagouv"
+    collections: [] 
+    accepted_file_types: []
+    system_prompt: "Tu es un agent capable de faire des recherches et de lire des API..."
+    allowed_tools: ["local", "datagouv"]
     

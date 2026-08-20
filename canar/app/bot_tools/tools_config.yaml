@@ -1,0 +1,9 @@
+tool_providers:
+  mcp:
+    datagouv:
+      url: "https://mcp.data.gouv.fr/mcp"
+      timeout_seconds: 15
+      read_timeout_seconds: 60
+  local:
+    local:
+      description: "Outils Python locaux"

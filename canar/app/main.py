@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import time
@@ -11,15 +12,15 @@ from sqlmodel import Session, select
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.retrieval import search_qdrant
-
-# from canar.app.bot_tools.registry import ToolRegistry
+from canar.app.bot_tools.registry import ToolRegistry
+from canar.app.bot_tools.tool_config import ToolProvidersConfig
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.config import AppConfig
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
 from canar.app.utils.llm_utils import assemble_context, build_universal_messages
-from canar.app.yaml_loader import load_chatbot_on_boot
+from canar.app.yaml_loader import load_bot_tools_on_boot, load_chatbot_on_boot
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -29,23 +30,24 @@ db = DB(cfg.db_path)
 
 
 @st.cache_resource()
-def init_app_agent_data(_db: DB):
+def init_tool_registry() -> tuple[ToolRegistry, ToolProvidersConfig]:
+    yaml_path = "canar/app/bot_tools/tools_config.yaml"
+    return load_bot_tools_on_boot(yaml_path)
+
+
+tool_registry, providers_config = init_tool_registry()
+
+
+@st.cache_resource()
+def init_app_agent_data(_db: DB, _providers_config: ToolProvidersConfig = None):
 
     mimetypes.add_type("text/x-r-source", ".r")
     mimetypes.add_type("application/x-sas", ".sas")
 
-    load_chatbot_on_boot(cfg.chatbot_config_path, _db)
+    load_chatbot_on_boot(cfg.chatbot_config_path, _db, _providers_config)
 
 
-# @st.cache_resource()
-# def init_tool_registry() -> ToolRegistry:
-#     yaml_path = "canar/app/bot_tools/tools_config.yaml"
-#     return load_bot_tools_on_boot(yaml_path)
-
-
-# tool_registry = init_tool_registry()
-
-init_app_agent_data(db)
+init_app_agent_data(db, providers_config)
 
 
 @st.cache_data(ttl=3600)
@@ -259,6 +261,89 @@ if current_bot and current_bot.accepted_file_types:
     if uploaded is not None:
         uploaded_file_content = uploaded.read().decode("utf-8", errors="ignore")
 
+
+async def process_agent_turn():
+    print("Initialisation des connexions réseau...")
+    await tool_registry.initialize_all()
+
+    try:
+        allowed_tools = current_bot.allowed_tools
+        print("avant le async")
+        allowed_tools_schemas = await tool_registry.get_all_tools_schemas(allowed_tools)
+        print("après le async")
+
+        if not allowed_tools or len(allowed_tools) == 0:
+            gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
+            stream_answer(db, USER_ID, conv_id, gen)
+            return
+
+        is_final_answer = False
+        final_text = ""
+
+        MAX_ITERATIONS = 5
+        iteration_count = 0
+        print("avant le with")
+        with st.status("L'agent analyse la demande...", expanded=True) as status:
+            print("L'agent analyse la demande...")
+            while not is_final_answer and iteration_count < MAX_ITERATIONS:
+                iteration_count += 1
+                print(f"Itération {iteration_count}")
+
+                response = chat.sync_chat(
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    allowed_tools_schemas=allowed_tools_schemas,
+                )
+
+                llm_msg = response.choices[0].message
+
+                if llm_msg.tool_calls:
+                    messages.append(llm_msg.model_dump(exclude_none=True))
+                    for tool_call in llm_msg.tool_calls:
+                        tool_name = tool_call.function.name
+                        st.write(f"Appel à l'outil {tool_name}...")
+                        print(f"Appel à l'outil {tool_name}...")
+                        try:
+                            tool_args = json.loads(tool_call.function.arguments)
+                            print(f"Le LLM demande '{tool_name}' avec les arguments : {tool_args}")
+                            result = await tool_registry.execute_tool(tool_name, tool_args)
+                            st.write("Données récupérées avec succès")
+                            print(f"Réponse de l'outil (extrait) : {str(result)[:500]}...")
+                        except Exception as e:
+                            result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"
+                            st.write(f"Erreur : {result}")
+                        messages.append(
+                            {"role": "tool", "tool_call_id": tool_call.id, "content": str(result)}
+                        )
+
+                else:
+                    is_final_answer = True
+                    final_text = llm_msg.content
+                    status.update(label="Réponse générée", state="complete", expanded=False)
+
+            if not is_final_answer:
+                final_text = (
+                    "Désolé, j'ai dû interrompre mes recherches car elles prenaient "
+                    "trop de temps ou tournaient en boucle. "
+                    "Voici un résumé de ce que j'ai trouvé jusque-là..."
+                )
+                status.update(
+                    label="Recherche interrompue (Limite atteinte)", state="error", expanded=False
+                )
+
+        def fake_stream_generator(text):
+            for chunk in text.split(" "):
+                yield chunk + " "
+                time.sleep(0.01)
+
+        gen = fake_stream_generator(final_text)
+        stream_answer(db, USER_ID, conv_id, gen)
+    finally:
+        print("Fermeture des connexions réseau...")
+        await tool_registry.cleanup_all()
+
+
 user_input = st.chat_input("Pose ta question (ou colle ton code)…")
 if user_input:
     # 1) show the user message immediately in the chat
@@ -298,72 +383,7 @@ if user_input:
         rag_context=context_text,
     )
 
-    allowed_tools = current_bot.allowed_tools
-
-    # allowed_tools_schemas = asyncio.run(tool_registry.get_all_tools_schemas(allowed_tools))
-
-    if not allowed_tools or len(allowed_tools) == 0:
-        gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-        answer = stream_answer(db, USER_ID, conv_id, gen)
-    else:
-        is_final_answer = False
-        final_text = ""
-
-        MAX_ITERATIONS = 5
-        iteration_count = 0
-
-        with st.status("L'agent analyse la demande...", expanded=True) as status:
-            while not is_final_answer and iteration_count < MAX_ITERATIONS:
-                iteration_count += 1
-
-                response = chat.sync_chat(
-                    messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    # allowed_tools_schemas=allowed_tools_schemas,
-                )
-
-                llm_msg = response.choices[0].message
-
-                if llm_msg.tool_calls:
-                    messages.append(llm_msg.model_dump(exclude_none=True))
-                    for tool_call in llm_msg.tool_calls:
-                        tool_name = tool_call.function.name
-                        st.write(f"Appel à l'outil {tool_name}...")
-                        try:
-                            tool_args = json.loads(tool_call.function.arguments)
-                            result = None
-                            # asyncio.run(tool_registry.execute_tool(tool_name, tool_args))
-                            st.write("Données récupérées avec succès")
-                        except Exception as e:
-                            result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"
-                            st.write(f"Erreur : {result}")
-                        messages.append(
-                            {"role": "tool", "tool_call_id": tool_call.id, "content": str(result)}
-                        )
-
-                else:
-                    is_final_answer = True
-                    final_text = llm_msg.content
-                    status.update(label="Réponse générée", state="complete", expanded=False)
-
-            if not is_final_answer:
-                final_text = (
-                    "Désolé, j'ai dû interrompre mes recherches car elles prenaient "
-                    "trop de temps ou tournaient en boucle. "
-                    "Voici un résumé de ce que j'ai trouvé jusque-là..."
-                )
-                status.update(
-                    label="Recherche interrompue (Limite atteinte)", state="error", expanded=False
-                )
-
-        def fake_stream_generator(text):
-            for chunk in text.split(" "):
-                yield chunk + " "
-                time.sleep(0.01)
-
-        gen = fake_stream_generator(final_text)
-        answer = stream_answer(db, USER_ID, conv_id, gen)
+    asyncio.run(process_agent_turn())
 
     # Citations panel
     if len(src_list):
