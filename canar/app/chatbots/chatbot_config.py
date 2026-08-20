@@ -5,7 +5,6 @@ from sqlmodel import Field, Session, SQLModel, select
 
 
 class ChatbotConfig(SQLModel, table=True):
-    
     # id avec des minuscules, chiffres et underscores uniquement
     id: str = Field(primary_key=True, regex=r"^[a-z0-9_]+$")
     # name et system_prompt ne peuvent pas être vides

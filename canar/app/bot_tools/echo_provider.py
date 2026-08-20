@@ -1,4 +1,5 @@
 from typing import Any
+
 from canar.app.bot_tools.base import BaseToolProvider
 from canar.app.bot_tools.errors import InvalidToolArguments, ToolNotFound
 from canar.app.bot_tools.models import ToolDefinition, ToolResult
@@ -20,7 +21,9 @@ class EchoToolProvider(BaseToolProvider):
             ToolDefinition(
                 provider_id=self.provider_id,
                 name="echo",
-                description="Répète le texte fourni en entrée. Utilisé pour les tests et diagnostics.",
+                description=(
+                    "Répète le texte fourni en entrée. Utilisé pour les tests et diagnostics."
+                ),
                 input_schema={
                     "type": "object",
                     "properties": {

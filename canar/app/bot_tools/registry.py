@@ -24,7 +24,9 @@ class ToolRegistry:
     def register_provider(self, provider_id: str, provider: BaseToolProvider) -> None:
         """Enregistre un fournisseur d'outils au registre."""
         if "__" in provider_id:
-            raise ValueError(f"L'identifiant de provider '{provider_id}' ne doit pas contenir '__'.")
+            raise ValueError(
+                f"L'identifiant de provider '{provider_id}' ne doit pas contenir '__'."
+            )
 
         self._providers[provider_id] = provider
         logger.info(f"Provider '{provider_id}' enregistré dans le registre.")
@@ -38,9 +40,12 @@ class ToolRegistry:
             except Exception as e:
                 logger.error(f"Échec de l'initialisation du provider '{pid}' : {e}")
 
-    async def list_all_tools(self, allowed_providers: list[str] | None = None) -> list[ToolDefinition]:
+    async def list_all_tools(
+        self, allowed_providers: list[str] | None = None
+    ) -> list[ToolDefinition]:
         """
-        Récupère la liste de tous les ToolDefinition enregistrés (filtrés optionnellement par provider).
+        Récupère la liste de tous les ToolDefinition enregistrés
+        (filtrés optionnellement par provider).
         Applique la convention de nommage public : provider_id__tool_name.
         """
         all_definitions: list[ToolDefinition] = []
@@ -53,7 +58,9 @@ class ToolRegistry:
                 raw_tools = await provider.list_tools()
                 for tool in raw_tools:
                     # Garantir que le nom exposé est bien préfixé par provider_id__
-                    full_name = tool.name if tool.name.startswith(f"{pid}__") else f"{pid}__{tool.name}"
+                    full_name = (
+                        tool.name if tool.name.startswith(f"{pid}__") else f"{pid}__{tool.name}"
+                    )
                     prefixed_tool = ToolDefinition(
                         provider_id=pid,
                         name=full_name,
@@ -66,7 +73,9 @@ class ToolRegistry:
 
         return all_definitions
 
-    async def execute_tool(self, tool_name: str, arguments: dict[str, Any], call_id: str | None = None) -> ToolResult:
+    async def execute_tool(
+        self, tool_name: str, arguments: dict[str, Any], call_id: str | None = None
+    ) -> ToolResult:
         """
         Route un appel d'outil (format provider_id__tool_name) vers le bon provider.
         """
@@ -77,7 +86,9 @@ class ToolRegistry:
 
         provider = self._providers.get(provider_id)
         if not provider:
-            raise ProviderUnavailable(provider_id=provider_id, reason="Provider non trouvé dans le registre.")
+            raise ProviderUnavailable(
+                provider_id=provider_id, reason="Provider non trouvé dans le registre."
+            )
 
         try:
             logger.info(f"Routage de '{tool_name}' vers le provider '{provider_id}'.")

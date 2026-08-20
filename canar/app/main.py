@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import time
@@ -11,16 +12,15 @@ from sqlmodel import Session, select
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.retrieval import search_qdrant
-
 from canar.app.bot_tools.registry import ToolRegistry
+from canar.app.bot_tools.tool_config import ToolProvidersConfig
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.config import AppConfig
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
 from canar.app.utils.llm_utils import assemble_context, build_universal_messages
-from canar.app.yaml_loader import load_chatbot_on_boot, load_bot_tools_on_boot
-import asyncio
+from canar.app.yaml_loader import load_bot_tools_on_boot, load_chatbot_on_boot
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -261,6 +261,7 @@ if current_bot and current_bot.accepted_file_types:
     if uploaded is not None:
         uploaded_file_content = uploaded.read().decode("utf-8", errors="ignore")
 
+
 async def process_agent_turn():
     print("Initialisation des connexions réseau...")
     await tool_registry.initialize_all()
@@ -273,9 +274,9 @@ async def process_agent_turn():
 
         if not allowed_tools or len(allowed_tools) == 0:
             gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-            answer = stream_answer(db, USER_ID, conv_id, gen)
+            stream_answer(db, USER_ID, conv_id, gen)
             return
-        
+
         is_final_answer = False
         final_text = ""
 
@@ -337,7 +338,7 @@ async def process_agent_turn():
                 time.sleep(0.01)
 
         gen = fake_stream_generator(final_text)
-        answer = stream_answer(db, USER_ID, conv_id, gen)
+        stream_answer(db, USER_ID, conv_id, gen)
     finally:
         print("Fermeture des connexions réseau...")
         await tool_registry.cleanup_all()
@@ -411,4 +412,3 @@ if current_bot.export_extension:
                 file_name=f"export.{current_bot.export_extension}",
                 mime=current_bot.exporte_mime_type,
             )
-

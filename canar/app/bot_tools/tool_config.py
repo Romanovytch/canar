@@ -30,9 +30,7 @@ class ToolProvidersConfig(BaseModel):
         """Vérifie si un provider existe dans l'une des sous-sections (mcp ou local)."""
         return provider_id in self.mcp or provider_id in self.local
 
-    def get_provider(
-        self, provider_id: str
-    ) -> MCPProviderConfig | LocalProviderConfig | None:
+    def get_provider(self, provider_id: str) -> MCPProviderConfig | LocalProviderConfig | None:
         """Retourne la configuration d'un provider par son identifiant."""
         if provider_id in self.mcp:
             return self.mcp[provider_id]

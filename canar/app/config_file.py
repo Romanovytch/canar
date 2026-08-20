@@ -1,4 +1,5 @@
 import logging
+
 from pydantic import BaseModel, Field, model_validator
 
 from canar.app.bot_tools.tool_config import ToolProvidersConfig
@@ -30,8 +31,8 @@ class CanarConfigFile(BaseModel):
                     local_keys = list(self.tool_providers.local.keys())
                     available = mcp_keys + local_keys
                     raise ValueError(
-                        f"[Erreur de Configuration] Le chatbot '{bot.id}' fait référence au provider "
-                        f"inconnu '{provider_id}' dans ses 'allowed_tools'. "
+                        f"[Erreur de Configuration] Le chatbot '{bot.id}' fait référence au "
+                        f"provider inconnu '{provider_id}' dans ses 'allowed_tools'. "
                         f"Providers déclarés disponibles : {available}"
                     )
         return self

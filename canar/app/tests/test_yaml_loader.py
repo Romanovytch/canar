@@ -4,7 +4,7 @@ import pytest
 import yaml
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from canar.app.bot_tools.tool_config import ToolProvidersConfig, MCPProviderConfig
+from canar.app.bot_tools.tool_config import MCPProviderConfig, ToolProvidersConfig
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.yaml_loader import load_bot_tools_on_boot, load_chatbot_on_boot
 
@@ -119,9 +119,7 @@ def test_load_bot_tools_on_boot_success(tmp_path: Path):
                     "timeout_seconds": 15,
                 }
             },
-            "local": {
-                "echo": {"description": "Provider echo local"}
-            },
+            "local": {"echo": {"description": "Provider echo local"}},
         }
     }
     filepath = tmp_path / "tools_config.yaml"
@@ -169,9 +167,7 @@ def test_loader_cross_validation_success(mock_db, tmp_path: Path):
                 "name": "Bot Good Tools",
                 "description": "...",
                 "system_prompt": "...",
-                "allowed_tools": [
-                    {"provider": "datagouv", "tools": ["search_datasets"]}
-                ],
+                "allowed_tools": [{"provider": "datagouv", "tools": ["search_datasets"]}],
                 "tool_policy": {
                     "max_iterations": 5,
                     "max_calls_per_turn": 2,

@@ -12,7 +12,9 @@ class AllowedToolConfig(BaseModel):
     """
 
     provider: str
-    tools: list[str] = Field(default_factory=list)  # Si vide, tous les outils du provider sont autorisés
+    tools: list[str] = Field(
+        default_factory=list
+    )  # Si vide, tous les outils du provider sont autorisés
 
 
 class ToolPolicyConfig(BaseModel):

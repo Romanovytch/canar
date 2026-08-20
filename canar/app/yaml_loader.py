@@ -27,9 +27,7 @@ def load_bot_tools_on_boot(
     path = Path(yaml_path)
 
     if not path.exists():
-        logger.warning(
-            f"[Avertissement] Fichier de configuration des outils introuvable : {path}"
-        )
+        logger.warning(f"[Avertissement] Fichier de configuration des outils introuvable : {path}")
         return registry, providers_config
 
     try:
@@ -49,7 +47,7 @@ def load_bot_tools_on_boot(
         return registry, providers_config
 
     # Instanciation des providers locaux
-    for pid, local_config in providers_config.local.items():
+    for pid, _local_config in providers_config.local.items():
         provider = LocalPythonProvider(provider_id=pid)
         registry.register_provider(pid, provider)
 
@@ -80,9 +78,7 @@ def load_chatbot_on_boot(
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception as e:
-        logger.exception(
-            f"[Erreur] Une erreur s'est produite lors de la lecture de {path} : {e}"
-        )
+        logger.exception(f"[Erreur] Une erreur s'est produite lors de la lecture de {path} : {e}")
         return
 
     try:
@@ -99,13 +95,13 @@ def load_chatbot_on_boot(
         for bot in config_file.chatbots:
             for pid in bot.get_allowed_provider_ids():
                 if not providers_config.has_provider(pid):
-                    available = (
-                        list(providers_config.mcp.keys())
-                        + list(providers_config.local.keys())
+                    available = list(providers_config.mcp.keys()) + list(
+                        providers_config.local.keys()
                     )
                     logger.error(
-                        f"[Erreur de Configuration] Le chatbot '{bot.id}' fait référence au provider "
-                        f"inconnu '{pid}' dans ses 'allowed_tools'. Providers disponibles : {available}"
+                        f"[Erreur de Configuration] Le chatbot '{bot.id}' fait référence au "
+                        f"provider inconnu '{pid}' dans ses 'allowed_tools'. "
+                        f"Providers disponibles : {available}"
                     )
                     return
 
@@ -117,9 +113,7 @@ def load_chatbot_on_boot(
                     success = bot_db.saveChatbot(session, False)
 
                     if not success:
-                        raise ValueError(
-                            f"Le chatbot '{bot_db.id}' a échoué aux règles métiers."
-                        )
+                        raise ValueError(f"Le chatbot '{bot_db.id}' a échoué aux règles métiers.")
 
             session.commit()
             logger.info(
