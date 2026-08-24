@@ -15,7 +15,7 @@ run:
   dataset: datasets/benchmark_dicovarg21_v0.yaml   # path relative to benchmark/
   agent: generic_agent
   limit: null                  # null = all 12 questions; set an int for a quick pass
-  judge_model: qwen2.5:7b      # non-reasoning judge (fast, no timeouts); null = product LLM
+  judge_model: gemma3:12b      # non-reasoning judge; qwen2.5:7b returned the wrong JSON schema
   gen_max_tokens: 8192         # high, so the reasoning model finishes thinking AND answers
   measure_resources: false     # true = also measure CPU/memory/GPU cost per phase (env: MEASURE_RESOURCES)
 

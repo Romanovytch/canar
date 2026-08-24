@@ -45,8 +45,12 @@ runs, even on the same machine**:
 
 - The answer generator (`qwen3.5:9b`) is not deterministic on local Ollama, even
   at `temperature=0` (float/GPU/batching).
-- The RAGAS judge (`qwen2.5:7b`) is itself an LLM, and returns 1 generation
-  instead of the requested 3 on Ollama, adding noise.
+- The RAGAS judge is itself an LLM, and Ollama returns 1 generation where the
+  metric asks for 3, so answer relevancy rests on a single sampled question
+  instead of an average of three. Measured on one unchanged input: 0.749 to
+  0.905 across eight repeats. Averaging over several runs recovers what the
+  three samples were meant to give — `harness/aggregate_runs.py` does it, and
+  reports the spread rather than hiding it.
 
 Treat these as **indicative**, not exact. Report them as trends, ideally
 averaged over a few runs.
