@@ -93,12 +93,16 @@ class MCPProvider(BaseToolProvider):
 
             return definitions
         except Exception as e:
-            logger.error(f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {e}")
+            logger.error(
+                f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {e}"
+            )
             raise ProviderUnavailable(provider_id=self.provider_id, reason=str(e)) from e
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         if not self.session:
-            raise ProviderUnavailable(provider_id=self.provider_id, reason="Session MCP non initialisée.")
+            raise ProviderUnavailable(
+                provider_id=self.provider_id, reason="Session MCP non initialisée."
+            )
 
         actual_name = name.replace(f"{self.provider_id}__", "")
 
@@ -109,7 +113,9 @@ class MCPProvider(BaseToolProvider):
 
             return ToolResult(content=content, is_error=False)
         except Exception as e:
-            logger.error(f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {e}")
+            logger.error(
+                f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {e}"
+            )
             raise
 
     async def close(self):

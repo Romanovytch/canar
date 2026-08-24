@@ -111,7 +111,9 @@ class ToolRegistry:
         for item in allowed_tools:
             if isinstance(item, str):
                 allowed_provider_ids.append(item)
-                allowlist_by_provider[item] = []  # Liste vide = tous les outils du provider autorisés
+                allowlist_by_provider[
+                    item
+                ] = []  # Liste vide = tous les outils du provider autorisés
             elif isinstance(item, AllowedToolConfig):
                 allowed_provider_ids.append(item.provider)
                 allowlist_by_provider[item.provider] = item.tools
@@ -126,7 +128,11 @@ class ToolRegistry:
             actual_tool_name = tool.name.replace(f"{pid}__", "")
 
             # Si aucune restriction spécifique d'outil, ou si l'outil est dans l'allowlist
-            if not specific_tools or actual_tool_name in specific_tools or tool.name in specific_tools:
+            if (
+                not specific_tools
+                or actual_tool_name in specific_tools
+                or tool.name in specific_tools
+            ):
                 filtered_tools.append(tool)
 
         return filtered_tools
@@ -147,7 +153,8 @@ class ToolRegistry:
 
         if tool_name not in allowed_names:
             logger.warning(
-                f"[Sécurité Accès Refusé] Tentative d'exécution de l'outil non autorisé '{tool_name}'."
+                f"[Sécurité Accès Refusé] Tentative d'exécution de l'outil "
+                f"non autorisé '{tool_name}'."
             )
             pid = tool_name.split("__")[0] if "__" in tool_name else None
             raise ToolNotFound(tool_name=tool_name, provider_id=pid)

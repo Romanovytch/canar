@@ -1,4 +1,5 @@
 import logging
+
 from canar.app.bot_tools.base import BaseToolProvider
 from canar.app.bot_tools.errors import ProviderUnavailable
 from canar.app.bot_tools.local_provider import LocalPythonProvider
@@ -45,14 +46,15 @@ class ToolProviderFactory:
 
             else:
                 raise ValueError(
-                    f"Type de configuration non pris en charge pour le provider '{provider_id}': {type(config).__name__}"
+                    f"Type de configuration non pris en charge pour le provider "
+                    f"'{provider_id}': {type(config).__name__}"
                 )
 
         except Exception as e:
-            logger.error(
-                f"[Mode Dégradé] Échec de la création du provider '{provider_id}' : {e}"
-            )
+            logger.error(f"[Mode Dégradé] Échec de la création du provider '{provider_id}' : {e}")
             raise ProviderUnavailable(
-                provider_id=provider_id if isinstance(provider_id, str) and provider_id else "inconnu",
+                provider_id=provider_id
+                if isinstance(provider_id, str) and provider_id
+                else "inconnu",
                 reason=f"Impossible d'instancier le provider : {e}",
             ) from e
