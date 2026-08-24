@@ -84,6 +84,12 @@ def _pipeline_error_message(exc: Exception) -> str:
 ERROR_METRIC = "ERROR"
 PIPELINE_ERROR_ANSWER = "[PIPELINE_ERROR]"
 
+# A pipeline that ran but produced no text. Kept apart from PIPELINE_ERROR: that
+# one is the benchmark failing, this one is the product failing to answer, and
+# only the second is a result. It happens with a reasoning model that spends its
+# whole token budget thinking and never starts the answer.
+EMPTY_ANSWER = "[EMPTY_ANSWER]"
+
 
 @dataclass
 class DatasetSpec:
@@ -188,7 +194,7 @@ def run_benchmark(
     print(f"{name}: {len(items)} questions\n")
 
     samples, retr_rows, all_paths = [], [], []
-    pipeline_statuses, pipeline_errors = [], []
+    pipeline_statuses, pipeline_errors, answer_statuses = [], [], []
     metadatas = []                       # per-question extras (rich YAML datasets)
     perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
     metric_names = tuple(retrieval_metrics.compute([], "").keys())
@@ -205,6 +211,9 @@ def run_benchmark(
         failed = out.error is not None
         pipeline_statuses.append("ERROR" if failed else "OK")
         pipeline_errors.append(out.error or "")
+        answer_statuses.append(
+            "EMPTY" if not failed and out.answer.strip() == EMPTY_ANSWER else "OK"
+        )
 
         metadatas.append(item.metadata)
         for perf_field in PERF_FIELDS:
@@ -265,7 +274,8 @@ def run_benchmark(
     meta_cols = {"user_input", "retrieved_contexts", "response", "reference"}
     out_df["pipeline_status"] = pipeline_statuses
     out_df["pipeline_error"] = pipeline_errors
-    meta_cols |= {"pipeline_status", "pipeline_error"}
+    out_df["answer_status"] = answer_statuses
+    meta_cols |= {"pipeline_status", "pipeline_error", "answer_status"}
     if tag:  # constant columns (e.g. profile name) — kept out of the score means
         for key, value in tag.items():
             out_df[key] = value
@@ -301,11 +311,28 @@ def run_benchmark(
     meta_cols |= set(meta_keys)
 
     score_cols = [c for c in out_df.columns if c not in meta_cols]
+
+    # An answer with no text is a failure to answer, and it has to be scored as
+    # one. RAGAS leaves faithfulness undefined for it — the ratio of supported to
+    # total claims has no denominator when the answer states nothing — so the
+    # question would drop out of the mean, and a profile that failed to answer
+    # would be graded only on the questions it did answer. Answer relevancy
+    # already returns 0 here; this makes faithfulness agree.
+    #
+    # Zero is a convention, not a derivation, which is why `answer_status` marks
+    # the rows it was applied to: the choice stays countable instead of
+    # disappearing into an average.
+    empty_mask = out_df["answer_status"] == "EMPTY"
+    if empty_mask.any() and "faithfulness" in out_df.columns:
+        out_df.loc[empty_mask, "faithfulness"] = 0.0
+
     error_mask = out_df["pipeline_status"] == "ERROR"
     if error_mask.any():
         out_df[score_cols] = out_df[score_cols].astype(object)
         out_df.loc[error_mask, score_cols] = ERROR_METRIC
-    display_cols = ["user_input", "pipeline_status", "pipeline_error"] + score_cols
+    display_cols = [
+        "user_input", "pipeline_status", "pipeline_error", "answer_status"
+    ] + score_cols
     print(out_df[display_cols].to_string(index=False))
     numeric_scores = out_df[score_cols].apply(pd.to_numeric, errors="coerce")
     print("\nMean scores:")
@@ -328,7 +355,7 @@ def run_benchmark(
     tag_cols = list(tag) if tag else []
     extra_cols = [k for k in meta_keys if k not in tag_cols]  # dataset metadata
     metrics_path = out_dir / "metrics.csv"
-    status_cols = ["pipeline_status", "pipeline_error"]
+    status_cols = ["pipeline_status", "pipeline_error", "answer_status"]
     out_df[["user_input"] + tag_cols + extra_cols + status_cols + score_cols].to_csv(
         metrics_path,
         index=False,

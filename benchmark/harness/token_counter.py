@@ -79,6 +79,11 @@ def summarize_token_usage(summaries):
 
     `summaries`: list of (profile_name, DataFrame) where the DataFrame carries
     the TOKEN_FIELDS columns. Returns a DataFrame, one row per profile.
+
+    A question whose pipeline raised carries the string "ERROR" in these columns
+    rather than a count, so the values are coerced instead of just dropped: a
+    plain dropna() keeps the string, and summing it ends the whole run at the
+    final table, after every profile has already been scored.
     """
     import pandas as pd
 
@@ -87,7 +92,7 @@ def summarize_token_usage(summaries):
         row: dict[str, object] = {"profile": name}
         for field in TOKEN_FIELDS:
             if field in df.columns:
-                series = df[field].dropna()
+                series = pd.to_numeric(df[field], errors="coerce").dropna()
                 if series.empty:
                     continue
                 row[f"{field}_avg"] = round(float(series.mean()), 1)
