@@ -133,3 +133,8 @@ without a GPU the run-context GPU fields are simply absent).
   `canar/.env` and a collection ingested with sparse vectors (see `SETUP.md`).
 - A profile can name any strategy `RetrievalService` builds, so new product
   strategies become available here without changing the benchmark.
+- `hybrid_summary` retrieves over a separate collection of LLM summaries, built
+  by AgoRa's summary ingestion. Its name is the base collection plus the suffix
+  the product's profile configures, so the benchmark derives it from the profile
+  rather than hardcoding it. The preflight validates that collection and aborts
+  with a clear message if it's missing (see `SETUP.md`).

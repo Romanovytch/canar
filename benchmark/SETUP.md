@@ -105,6 +105,37 @@ To also measure CPU/memory/GPU cost, run with `MEASURE_RESOURCES=1` (see
 `CONFIG.md`). For a quick pass, set `limit: 3` in `config.yaml`. See
 `REPRODUCIBILITY.md` for what reproduces exactly and what is only indicative.
 
+## 7. (Optional) Benchmark the `hybrid_summary` profile
+
+`hybrid_summary` retrieves over a **separate** collection of LLM-generated
+summaries, built by AgoRa's summary ingestion. Its name is the base collection
+plus the suffix the product's profile configures (see
+`canar/app/retrieval/profiles.py`), and the benchmark derives it from the
+profile. The preflight prints the exact name it expects and aborts with a clear
+message if it's missing.
+
+Enable summaries in `agora/sources.yaml`:
+
+```yaml
+    synthetic_llm_summary: true
+    synthetic_llm_summary_group_max_tokens: 3000
+    synthetic_llm_summary_max_sentences: 3
+```
+
+Re-run the ingest with the LLM flags (it builds the summaries collection
+alongside the base one); see AgoRa's docs for the exact options:
+
+```bash
+cd ../../agora && source .venv/bin/activate
+agora-ingest \
+  --sources-config-path sources.yaml --source utilitr \
+  --collection utilitr_v2 --dotenv-path .env --drop-collection \
+  --llm-api-base <LLM_API_BASE> --llm-model <LLM_MODEL>
+```
+
+The `hybrid_summary` row is already in `config.yaml`. Once the summaries
+collection exists, the normal run includes it.
+
 ## Fallback (dense-only)
 
 If sparse/hybrid misbehave, revert to the dense collection in `canar/.env`:

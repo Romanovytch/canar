@@ -76,6 +76,7 @@ from bench_config import load_config  # noqa: E402
 # APOSTROPHE NORMALIZATION WORKAROUND: remove this import and unwrap
 # `judge_embeddings` below to restore direct RAGAS OpenAIEmbeddings usage.
 from embedding_normalization import NormalizingEmbeddings  # noqa: E402
+from preflight import collection_requirements, unclassified_profiles  # noqa: E402
 from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 from resource_probe import gpu_context, hardware_profile, probe  # noqa: E402
 from token_counter import TokenCounter, summarize_token_usage  # noqa: E402
@@ -207,6 +208,11 @@ DENSE_PROFILE_NAMES = {
     "hybrid_parent_child_rerank_qwen_0.6b",
     "hybrid_parent_child_rerank_qwen_4b",
     "hybrid_parent_child_rerank_qwen_8b",
+    "hybrid_summary",
+    "hybrid_summary_rerank_bge",
+    "hybrid_summary_rerank_qwen_0.6b",
+    "hybrid_summary_rerank_qwen_4b",
+    "hybrid_summary_rerank_qwen_8b",
 }
 
 SPARSE_PROFILE_NAMES = {
@@ -222,6 +228,11 @@ SPARSE_PROFILE_NAMES = {
     "hybrid_parent_child_rerank_qwen_0.6b",
     "hybrid_parent_child_rerank_qwen_4b",
     "hybrid_parent_child_rerank_qwen_8b",
+    "hybrid_summary",
+    "hybrid_summary_rerank_bge",
+    "hybrid_summary_rerank_qwen_0.6b",
+    "hybrid_summary_rerank_qwen_4b",
+    "hybrid_summary_rerank_qwen_8b",
 }
 
 
@@ -270,7 +281,10 @@ judge_embeddings = NormalizingEmbeddings(
         openai_api_base=cfg.embed_base,
         openai_api_key=cfg.embed_key or "EMPTY",
         check_embedding_ctx_length=False,  # send raw strings; Ollama rejects token arrays
-    )
+    ),
+    # Shared across runs on purpose: the failures are rare and intermittent, so
+    # one accumulating file is what makes a pattern visible between them.
+    failure_log=HERE / "results" / "embedding_failures.jsonl",
 )
 
 
@@ -298,16 +312,47 @@ def check_environment() -> None:
 
 
 def preflight() -> None:
-    """Fail fast with a clear message if the AgoRa collection isn't ready."""
+    """Fail fast with a clear message if a collection a profile needs isn't ready."""
     check_environment()
-    # Validate only the vectors the active product profiles actually query.
-    active_profiles = [resolve_profile(p) for p in BENCH.profiles]
-    needs_dense = any(profile_needs_dense(profile) for profile in active_profiles)
-    needs_sparse = any(profile_needs_sparse(profile) for profile in active_profiles)
+    resolved = [resolve_profile(p) for p in BENCH.profiles]
+    # A profile in neither name list would be read as needing no vectors, and its
+    # collection checks would be skipped without a word. Say so instead.
+    unclassified = unclassified_profiles(resolved, profile_needs_dense, profile_needs_sparse)
+    if unclassified:
+        sys.exit(
+            f"Profile(s) {sorted(unclassified)} are in neither DENSE_PROFILE_NAMES nor "
+            "SPARSE_PROFILE_NAMES in this file.\n"
+            "Every retrieval strategy queries at least one vector, so a profile in "
+            "neither list has not been classified yet — add it to the list(s) matching "
+            "its strategy, or its collection would go unchecked here and fail mid-run."
+        )
+    reqs = collection_requirements(resolved, profile_needs_dense, profile_needs_sparse)
+    base_collections = set(cfg.qdrant_collections)
+    # Derived parent collections, so a missing one reports the profile that needs
+    # it instead of the summary message.
+    parent_collections = {
+        f"{col}{profile.parent_child.parent_collection_suffix}"
+        for profile in resolved
+        if profile.parent_child is not None
+        for col in profile.effective_collections()
+    }
     client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
                           check_compatibility=False)
-    for col in cfg.qdrant_collections:
+    for col, need in sorted(reqs.items()):
         if not client.collection_exists(col):
+            if col in parent_collections:
+                sys.exit(
+                    f"Collection '{col}' not found at {cfg.qdrant_url}.\n"
+                    "A parent-child profile needs it. Without it the expansion is "
+                    "skipped silently and the profile scores exactly like its base "
+                    "profile — build it with the AgoRa parent ingestion (see SETUP.md)."
+                )
+            if col not in base_collections:
+                sys.exit(
+                    f"Collection '{col}' not found at {cfg.qdrant_url}.\n"
+                    "A summary profile needs it — build it with the AgoRa summary "
+                    "ingestion (see SETUP.md)."
+                )
             sys.exit(
                 f"Collection '{col}' not found at {cfg.qdrant_url}.\n"
                 "Build it with AgoRa first (see the command in this file's docstring)."
@@ -316,17 +361,24 @@ def preflight() -> None:
         pts, _ = client.scroll(collection_name=col, limit=1, with_payload=True)
         if not pts:
             sys.exit(f"Collection '{col}' is empty — run the AgoRa ingest first.")
-        if "source" not in pts[0].payload:
+        if need["source"] and "source" not in pts[0].payload:
             sys.exit(
                 f"Collection '{col}' has no 'source' payload field — it was not built "
                 "by AgoRa, and CanaR's source filter would return nothing. "
                 "Re-ingest with agora-ingest."
             )
+        if need["parent_id"] and not pts[0].payload.get("parent_id"):
+            sys.exit(
+                f"Collection '{col}' has no 'parent_id' payload field — a parent-child "
+                "profile needs it to reach the parent passage. Without it the expansion "
+                "is skipped silently and the profile scores exactly like its base "
+                "profile. Re-ingest with the AgoRa parent ingestion (see SETUP.md)."
+            )
         params = client.get_collection(col).config.params
         vectors_cfg = params.vectors                 # dict (named) or single config
         sparse_cfg = params.sparse_vectors or {}     # dict of named sparse vectors
 
-        if needs_dense:
+        if need["dense"]:
             # The dense vector must exist (by name on multi-vector collections) and
             # its size must match the embedding model CanaR queries with
             # (e.g. nomic=768 vs bge-m3=1024), or every dense search crashes.
@@ -349,7 +401,7 @@ def preflight() -> None:
                     "Re-ingest with the current embedding model (agora-ingest --drop-collection)."
                 )
 
-        if needs_sparse:
+        if need["sparse"]:
             # sparse/hybrid profiles query a named sparse vector; it must exist.
             sparse_name = cfg.qdrant_sparse_vector_name
             if not sparse_cfg or (sparse_name and sparse_name not in sparse_cfg):
@@ -358,7 +410,7 @@ def preflight() -> None:
                     f"(sparse vectors: {list(sparse_cfg)}). The sparse and hybrid profiles "
                     "need it — re-ingest with a sparse vector. See SETUP.md."
                 )
-    print(f"Preflight OK — collections {list(cfg.qdrant_collections)} ready at {cfg.qdrant_url}\n")
+    print(f"Preflight OK — collections {sorted(reqs)} ready at {cfg.qdrant_url}\n")
 
 
 def build_searcher(spec):
@@ -395,8 +447,21 @@ def build_searcher(spec):
     return search
 
 
+WARMUP_QUERY = "warm-up"
+
+
 def make_pipeline(search):
     """Wrap one profile's retrieval into a benchmark pipeline = one product turn."""
+    # One discarded query per profile, before any turn is timed. Models load
+    # lazily on first use — a reranker reads its weights in-process, and the
+    # embedding server loads its model if it has gone idle — so without this the
+    # cost lands on whichever question happened to run first. Measured on
+    # hybrid_rerank_bge: mean retrieval latency 849 ms without the warm-up
+    # against 190 ms with it, the difference being a single 5.4 s first turn.
+    # That made the reported latency a function of position in config.yaml
+    # rather than of the strategy.
+    search(WARMUP_QUERY)
+
     def ask_canar(question: str) -> PipelineOutput:
         # retrieve (timed for the Latency metric; resource-probed when enabled)
         with probe(MEASURE_RESOURCES) as r_usage:
@@ -434,9 +499,16 @@ def make_pipeline(search):
 
         # AgoRa stores the fiche path under "file_path" in the chunk payload
         # (RetrievalHit.metadata); that's what the retrieval metrics match on.
+        #
+        # `contexts` must be the text the model actually saw, which is what
+        # build_messages puts in the prompt: `generation_text or text`. A
+        # parent-child profile retrieves the child chunk but generates from the
+        # expanded parent passage, so judging against `text` alone would mark
+        # every claim drawn from the surrounding passage as unsupported — and the
+        # better the expansion works, the lower faithfulness would read.
         return PipelineOutput(
             answer=answer,
-            contexts=[hit.text for hit in citations],
+            contexts=[hit.generation_text or hit.text for hit in citations],
             paths=[(hit.metadata or {}).get("file_path", "") for hit in citations],
             retrieval_latency_s=retrieval_latency_s,
             generation_latency_s=generation_latency_s,
