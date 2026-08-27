@@ -117,7 +117,8 @@ class MCPProvider(BaseToolProvider):
                 if secret and len(secret) > 3:
                     clean_err = clean_err.replace(secret, "***")
             logger.error(
-                f"Erreur lors de la découverte des outils sur MCP '{self.provider_id}' : {clean_err}"
+                f"Erreur lors de la découverte des outils sur MCP "
+                f"'{self.provider_id}' : {clean_err}"
             )
             raise ProviderUnavailable(provider_id=self.provider_id, reason=clean_err) from e
 
@@ -143,7 +144,9 @@ class MCPProvider(BaseToolProvider):
                         text_parts.append(f"[{item.type} content]")
 
             content_text = (
-                "\n".join(text_parts) if text_parts else "Aucun contenu textuel renvoyé par l'outil."
+                "\n".join(text_parts)
+                if text_parts
+                else "Aucun contenu textuel renvoyé par l'outil."
             )
             is_error = bool(getattr(raw_result, "isError", False))
 
@@ -159,7 +162,8 @@ class MCPProvider(BaseToolProvider):
                 if secret and len(secret) > 3:
                     clean_err = clean_err.replace(secret, "***")
             logger.error(
-                f"Erreur lors de l'exécution de l'outil '{name}' sur MCP '{self.provider_id}' : {clean_err}"
+                f"Erreur lors de l'exécution de l'outil '{name}' "
+                f"sur MCP '{self.provider_id}' : {clean_err}"
             )
             raise ToolExecutionError(tool_name=name, original_error=clean_err) from e
 

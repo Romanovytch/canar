@@ -1,8 +1,9 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
-from canar.app.bot_tools.errors import ProviderUnavailable, ToolExecutionError
+from canar.app.bot_tools.errors import ToolExecutionError
 from canar.app.bot_tools.mcp_provider import MCPProvider
 
 
