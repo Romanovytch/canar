@@ -49,13 +49,13 @@ class LocalPythonProvider(BaseToolProvider):
                 raise InvalidToolArguments(
                     tool_name=name, reason="L'argument 'query' est requis et doit être une chaîne."
                 )
-            content = await self._do_web_search(query=query)
-            return ToolResult(content=content, is_error=False)
+            content, is_error = await self._do_web_search(query=query)
+            return ToolResult(content=content, is_error=is_error)
 
         raise ToolNotFound(tool_name=name, provider_id=self.provider_id)
 
-    async def _do_web_search(self, query: str) -> str:
-        """Logique interne de l'outil web search"""
+    async def _do_web_search(self, query: str) -> tuple[str, bool]:
+        """Logique interne de l'outil web search (retourne le contenu et le statut is_error)."""
         logger.info(f"Recherche web lancée pour : {query}")
 
         try:
@@ -63,7 +63,7 @@ class LocalPythonProvider(BaseToolProvider):
 
             result = DDGS().text(query, max_results=3)
             if not result:
-                return f"Aucun résultat sur le web pour {query}."
+                return f"Aucun résultat sur le web pour {query}.", False
 
             formated_results = []
             for r in result:
@@ -71,9 +71,10 @@ class LocalPythonProvider(BaseToolProvider):
                     f"Titre : {r['title']}\nLien : {r['href']}\nExtrait : {r['body']}"
                 )
 
-            return "\n\n---\n\n".join(formated_results)
+            return "\n\n---\n\n".join(formated_results), False
         except Exception as e:
-            return f"Erreur lors de la recherche web : {str(e)}"
+            logger.error(f"Erreur lors de la recherche web : {e}")
+            return f"Erreur lors de la recherche web : {str(e)}", True
 
     async def close(self):
         pass
