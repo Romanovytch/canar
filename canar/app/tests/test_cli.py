@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+
 import pytest
 import yaml
 
@@ -9,13 +10,7 @@ from canar.app.bot_tools.cli import run_call, run_list
 @pytest.fixture
 def cli_config_files(tmp_path: Path):
     """Génère deux fichiers YAML temporaires pour tester la CLI."""
-    tools_data = {
-        "tool_providers": {
-            "local": {
-                "echo": {"description": "Echo local provider"}
-            }
-        }
-    }
+    tools_data = {"tool_providers": {"local": {"echo": {"description": "Echo local provider"}}}}
     tools_path = tmp_path / "tools_config.yaml"
     with open(tools_path, "w", encoding="utf-8") as f:
         yaml.dump(tools_data, f)

@@ -32,9 +32,9 @@ async def run_list(chatbot_id: str, tools_yaml: str, chatbot_yaml: str):
         allowed_tools = bot.allowed_tools
         tools = await registry.list_tools_for_chatbot(allowed_tools)
 
-        print(f"\n==================================================")
+        print("\n==================================================")
         print(f"🦆 CanaR Tools — Outils autorisés pour '{bot.name}' ({bot.id})")
-        print(f"==================================================")
+        print("==================================================")
         print(f"Nombre d'outils disponibles : {len(tools)}\n")
 
         for tool in tools:
@@ -84,9 +84,9 @@ async def run_call(
             call_id="cli_diagnostic_call",
         )
 
-        print(f"\n==================================================")
+        print("\n==================================================")
         print(f"Résultat de l'exécution (is_error={result.is_error})")
-        print(f"==================================================")
+        print("==================================================")
         print(result.content)
         if result.structured_content:
             print("\nDonnées structurées :")
@@ -124,9 +124,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Commande list
-    list_parser = subparsers.add_parser(
-        "list", help="Lister les outils autorisés d'un chatbot"
-    )
+    list_parser = subparsers.add_parser("list", help="Lister les outils autorisés d'un chatbot")
     list_parser.add_argument(
         "--chatbot",
         required=True,
@@ -143,9 +141,7 @@ def main():
     call_parser.add_argument(
         "--tool", required=True, help="Nom complet de l'outil (ex: echo__echo)"
     )
-    call_parser.add_argument(
-        "--arguments", default="{}", help="Arguments au format JSON string"
-    )
+    call_parser.add_argument("--arguments", default="{}", help="Arguments au format JSON string")
 
     args = parser.parse_args()
 
