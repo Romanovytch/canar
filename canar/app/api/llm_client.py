@@ -35,8 +35,7 @@ class ChatClient:
             api_args["tool_choice"] = tool_choice or "auto"
 
         resp = self.client.chat.completions.create(**api_args)
-        for chunk in resp:
-            yield chunk
+        yield from resp
 
     def sync_chat(
         self,
