@@ -12,6 +12,8 @@ from sqlmodel import Session, select
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.retrieval import search_qdrant
+from canar.app.bot_tools.errors import ToolError
+from canar.app.bot_tools.openai_adapter import tools_to_openai_schemas
 from canar.app.bot_tools.registry import ToolRegistry
 from canar.app.bot_tools.tool_config import ToolProvidersConfig
 from canar.app.chatbots.chatbot_config import ChatbotConfig
@@ -268,11 +270,10 @@ async def process_agent_turn():
 
     try:
         allowed_tools = current_bot.allowed_tools
-        print("avant le async")
-        allowed_tools_schemas = await tool_registry.get_all_tools_schemas(allowed_tools)
-        print("après le async")
+        bot_tools = await tool_registry.list_tools_for_chatbot(allowed_tools)
+        allowed_tools_schemas = tools_to_openai_schemas(bot_tools)
 
-        if not allowed_tools or len(allowed_tools) == 0:
+        if not allowed_tools_schemas:
             gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
             stream_answer(db, USER_ID, conv_id, gen)
             return
@@ -280,12 +281,14 @@ async def process_agent_turn():
         is_final_answer = False
         final_text = ""
 
-        MAX_ITERATIONS = 5
+        max_iterations = (
+            current_bot.tool_policy.max_iterations
+            if hasattr(current_bot, "tool_policy") and current_bot.tool_policy
+            else 4
+        )
         iteration_count = 0
-        print("avant le with")
         with st.status("L'agent analyse la demande...", expanded=True) as status:
-            print("L'agent analyse la demande...")
-            while not is_final_answer and iteration_count < MAX_ITERATIONS:
+            while not is_final_answer and iteration_count < max_iterations:
                 iteration_count += 1
                 print(f"Itération {iteration_count}")
 
@@ -302,19 +305,40 @@ async def process_agent_turn():
                     messages.append(llm_msg.model_dump(exclude_none=True))
                     for tool_call in llm_msg.tool_calls:
                         tool_name = tool_call.function.name
-                        st.write(f"Appel à l'outil {tool_name}...")
-                        print(f"Appel à l'outil {tool_name}...")
+                        st.write(f"Exécution de l'outil '{tool_name}'...")
+
                         try:
-                            tool_args = json.loads(tool_call.function.arguments)
-                            print(f"Le LLM demande '{tool_name}' avec les arguments : {tool_args}")
-                            result = await tool_registry.execute_tool(tool_name, tool_args)
-                            st.write("Données récupérées avec succès")
-                            print(f"Réponse de l'outil (extrait) : {str(result)[:500]}...")
+                            tool_args = (
+                                json.loads(tool_call.function.arguments)
+                                if tool_call.function.arguments
+                                else {}
+                            )
+                            result = await tool_registry.execute_tool_for_chatbot(
+                                tool_name=tool_name,
+                                arguments=tool_args,
+                                allowed_tools=allowed_tools,
+                                call_id=tool_call.id,
+                            )
+                            content_str = result.content
+                            if result.is_error:
+                                st.warning(f"L'outil '{tool_name}' a renvoyé un avertissement.")
+                            else:
+                                st.write("Données récupérées avec succès")
+
+                        except ToolError as e:
+                            content_str = (
+                                f"Erreur lors de l'exécution de l'outil '{tool_name}' : {e}"
+                            )
+                            st.error(f"Échec de l'outil '{tool_name}' : {e}")
                         except Exception as e:
-                            result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"
-                            st.write(f"Erreur : {result}")
+                            content_str = (
+                                f"Erreur inattendue lors de l'exécution de l'outil "
+                                f"'{tool_name}' : {e}"
+                            )
+                            st.error(f"Erreur inattendue : {e}")
+
                         messages.append(
-                            {"role": "tool", "tool_call_id": tool_call.id, "content": str(result)}
+                            {"role": "tool", "tool_call_id": tool_call.id, "content": content_str}
                         )
 
                 else:
