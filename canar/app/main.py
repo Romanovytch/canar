@@ -12,7 +12,6 @@ from sqlmodel import Session, select
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
 from canar.app.api.retrieval import search_qdrant
-
 from canar.app.bot_tools.errors import ToolError
 from canar.app.bot_tools.openai_adapter import tools_to_openai_schemas
 from canar.app.bot_tools.registry import ToolRegistry
@@ -309,7 +308,11 @@ async def process_agent_turn():
                         st.write(f"Exécution de l'outil '{tool_name}'...")
 
                         try:
-                            tool_args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+                            tool_args = (
+                                json.loads(tool_call.function.arguments)
+                                if tool_call.function.arguments
+                                else {}
+                            )
                             result = await tool_registry.execute_tool_for_chatbot(
                                 tool_name=tool_name,
                                 arguments=tool_args,
@@ -323,10 +326,15 @@ async def process_agent_turn():
                                 st.write("Données récupérées avec succès")
 
                         except ToolError as e:
-                            content_str = f"Erreur lors de l'exécution de l'outil '{tool_name}' : {e}"
+                            content_str = (
+                                f"Erreur lors de l'exécution de l'outil '{tool_name}' : {e}"
+                            )
                             st.error(f"Échec de l'outil '{tool_name}' : {e}")
                         except Exception as e:
-                            content_str = f"Erreur inattendue lors de l'exécution de l'outil '{tool_name}' : {e}"
+                            content_str = (
+                                f"Erreur inattendue lors de l'exécution de l'outil "
+                                f"'{tool_name}' : {e}"
+                            )
                             st.error(f"Erreur inattendue : {e}")
 
                         messages.append(

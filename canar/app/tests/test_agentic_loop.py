@@ -1,5 +1,6 @@
 import asyncio
 from unittest.mock import MagicMock
+
 import pytest
 
 from canar.app.bot_tools.echo_provider import EchoToolProvider
