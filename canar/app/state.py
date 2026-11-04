@@ -7,6 +7,11 @@ import bcrypt
 from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 
 
+def utc_now() -> dt.datetime:
+    """Timezone-aware UTC timestamp (SQLModel rejects naive datetimes)."""
+    return dt.datetime.now(dt.UTC)
+
+
 # ---------- Models ----------
 class User(SQLModel, table=True):
     __table_args__ = {"extend_existing": True}
@@ -14,7 +19,7 @@ class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     password_hash: str
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=utc_now)
 
 
 class Conversation(SQLModel, table=True):
@@ -24,8 +29,8 @@ class Conversation(SQLModel, table=True):
     user_id: int = Field(index=True, foreign_key="user.id")
     title: str
     agent: str  # "sas_to_r" | "r_helpdesk"
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
-    updated_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=utc_now)
+    updated_at: dt.datetime = Field(default_factory=utc_now)
 
 
 class Message(SQLModel, table=True):
@@ -35,7 +40,7 @@ class Message(SQLModel, table=True):
     conversation_id: int = Field(index=True, foreign_key="conversation.id")
     role: str  # "user" | "assistant" | "system"
     content: str
-    created_at: dt.datetime = Field(default_factory=lambda: dt.datetime.utcnow())
+    created_at: dt.datetime = Field(default_factory=utc_now)
 
 
 # ---------- DB ----------
@@ -107,7 +112,7 @@ class DB:
             if not c or c.user_id != user_id:
                 return
             c.title = new_title
-            c.updated_at = dt.datetime.utcnow()
+            c.updated_at = utc_now()
             s.add(c)
             s.commit()
 
@@ -128,7 +133,7 @@ class DB:
                 raise PermissionError("Conversation introuvable ou non propriétaire.")
             m = Message(conversation_id=conv_id, role=role, content=content)
             s.add(m)
-            c.updated_at = dt.datetime.utcnow()
+            c.updated_at = utc_now()
             s.add(c)
             s.commit()
             s.refresh(m)
