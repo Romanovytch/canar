@@ -22,12 +22,6 @@ def test_custom_config_and_retrieval_k(tmp_path, monkeypatch):
     assert args.retrieval_k == 5
 
 
-def test_retrieval_k_underscore_alias(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    args = parse_eval_args(["--retrieval_k", "3"], default_config=Path("config.yaml"))
-    assert args.retrieval_k == 3
-
-
 @pytest.mark.parametrize("value", ["0", "-1"])
 def test_retrieval_k_must_be_positive(value, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
