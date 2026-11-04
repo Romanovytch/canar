@@ -157,7 +157,7 @@ QDRANT_MULTI_VECTOR_NAME=multi
 Use BGE first. Rerank is configured in the retrieval profile, not in `.env`:
 
 ```python
-rerank=RerankRetrievalParams(
+rerank = RerankRetrievalParams(
     output_top_k=5,
     model="bge-v2-m3",
     device="auto",

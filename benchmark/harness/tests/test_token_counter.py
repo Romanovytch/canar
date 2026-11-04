@@ -5,12 +5,12 @@ from token_counter import TokenCounter, summarize_token_usage
 
 
 def test_counts_a_string_and_is_monotonic():
-    counter = TokenCounter()          # no model name -> tiktoken or heuristic
+    counter = TokenCounter()  # no model name -> tiktoken or heuristic
     assert counter.count_text("") == 0
     short = counter.count_text("hello world")
     long = counter.count_text("hello world " * 50)
     assert short > 0
-    assert long > short               # more text -> more tokens
+    assert long > short  # more text -> more tokens
 
 
 def test_prompt_counts_all_messages():
@@ -44,7 +44,7 @@ def test_heuristic_fallback(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked_import)
     counter = TokenCounter()
     assert counter.source == "heuristic"
-    assert counter.count_text("a" * 40) == 10   # 40 chars / 4
+    assert counter.count_text("a" * 40) == 10  # 40 chars / 4
 
 
 def test_summarize_token_usage_computes_avg_min_max_total():
@@ -84,7 +84,7 @@ def test_summarize_token_usage_skips_a_failed_question():
 
     row = summarize_token_usage([("hybrid", df)]).iloc[0]
 
-    assert row["input_tokens_avg"] == 150.0    # the two that ran, not three
+    assert row["input_tokens_avg"] == 150.0  # the two that ran, not three
     assert row["input_tokens_min"] == 100
     assert row["input_tokens_max"] == 200
     assert row["input_tokens_total"] == 300

@@ -36,7 +36,7 @@ It is controlled by the selected retrieval profile, not by `.env`. Configure it
 in `profiles.py` with `RerankRetrievalParams`:
 
 ```python
-rerank=RerankRetrievalParams(
+rerank = RerankRetrievalParams(
     output_top_k=5,
     model="bge-v2-m3",
     device="auto",

@@ -12,12 +12,14 @@ from preflight import collection_requirements, unclassified_profiles
 @dataclass
 class _FakeParentChild:
     """Duck-types ParentChildRetrievalParams."""
+
     parent_collection_suffix: str = "_parent"
 
 
 @dataclass
 class _FakeProfile:
     """Duck-types the bits of RetrievalProfile the helper reads."""
+
     name: str
     collections: tuple
     source_filter: str | None = None
@@ -55,7 +57,10 @@ def test_summary_profile_validates_the_summaries_collection():
     assert "utilitr_v2" not in reqs
     # summary retrieval is hybrid -> needs dense + sparse; no source filter here
     assert reqs["utilitr_v2_summaries"] == {
-        "dense": True, "sparse": True, "source": False, "parent_id": False
+        "dense": True,
+        "sparse": True,
+        "source": False,
+        "parent_id": False,
     }
 
 
@@ -66,9 +71,7 @@ def test_requirements_are_unioned_across_profiles():
         _FakeProfile("simple_sparse", ("utilitr_v2",)),
     ]
     reqs = collection_requirements(profiles, _needs_dense, _needs_sparse)
-    assert reqs["utilitr_v2"] == {
-        "dense": True, "sparse": True, "source": True, "parent_id": False
-    }
+    assert reqs["utilitr_v2"] == {"dense": True, "sparse": True, "source": True, "parent_id": False}
 
 
 def test_parent_child_profile_validates_the_parent_collection():
@@ -82,7 +85,10 @@ def test_parent_child_profile_validates_the_parent_collection():
     # the parent collection must exist, but it is fetched by chunk id and never
     # searched, so it needs no vector
     assert reqs["utilitr_v2_parent"] == {
-        "dense": False, "sparse": False, "source": False, "parent_id": False
+        "dense": False,
+        "sparse": False,
+        "source": False,
+        "parent_id": False,
     }
 
 

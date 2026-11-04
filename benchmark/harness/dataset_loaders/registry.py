@@ -47,8 +47,7 @@ def get_loader(ext: str) -> DatasetLoader:
     if loader is None:
         supported = ", ".join(supported_formats()) or "(none registered)"
         raise UnsupportedDatasetFormat(
-            f"Unsupported dataset format {_normalise_ext(ext)!r}. "
-            f"Supported formats: {supported}."
+            f"Unsupported dataset format {_normalise_ext(ext)!r}. Supported formats: {supported}."
         )
     return loader
 

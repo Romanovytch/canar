@@ -125,9 +125,7 @@ def paired_table(frame: pd.DataFrame, metric: str) -> pd.DataFrame:
     common = questions_scored_in_every_run(frame, metric)
     usable = frame[frame[QUESTION_KEY].isin(common)].copy()
     usable[metric] = pd.to_numeric(usable[metric], errors="coerce")
-    return usable.pivot_table(
-        index=QUESTION_KEY, columns="profile", values=metric, aggfunc="mean"
-    )
+    return usable.pivot_table(index=QUESTION_KEY, columns="profile", values=metric, aggfunc="mean")
 
 
 def _format(table: pd.DataFrame, metrics=METRICS) -> str:
@@ -151,18 +149,22 @@ def main(argv: list[str]) -> None:
     table = aggregate(frame)
     print(_format(table))
     print()
-    print(f"{table['runs'].max()} run(s) combined. "
-          "n is the questions scored in every run, per metric; a metric whose n is "
-          "below the dataset size lost questions the judge could not score.")
+    print(
+        f"{table['runs'].max()} run(s) combined. "
+        "n is the questions scored in every run, per metric; a metric whose n is "
+        "below the dataset size lost questions the judge could not score."
+    )
 
     settings = judge_settings(frame)
     if settings:
         print()
-        print("Judge: " + ", ".join(
-            f"{name.removeprefix('judge_')}="
-            + "/".join(str(v) for v in values)
-            for name, values in settings.items()
-        ))
+        print(
+            "Judge: "
+            + ", ".join(
+                f"{name.removeprefix('judge_')}=" + "/".join(str(v) for v in values)
+                for name, values in settings.items()
+            )
+        )
         mixed = [name for name, values in settings.items() if len(values) > 1]
         if mixed:
             print(

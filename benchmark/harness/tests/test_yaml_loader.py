@@ -7,8 +7,8 @@ import pytest
 from dataset_loaders import load_dataset
 from dataset_loaders.yaml_loader import load_yaml
 
-BENCH_DIR = Path(__file__).resolve().parents[2]            # benchmark/
-MINI_CLIENT = BENCH_DIR.parent / "benchmark_mini_client"   # sibling dir (gitignored)
+BENCH_DIR = Path(__file__).resolve().parents[2]  # benchmark/
+MINI_CLIENT = BENCH_DIR.parent / "benchmark_mini_client"  # sibling dir (gitignored)
 
 SAMPLE = """
 dataset_id: benchmark_demo_v0
@@ -101,9 +101,7 @@ def test_empty_file_errors(tmp_path):
     assert "questions" in str(exc.value)
 
 
-@pytest.mark.parametrize(
-    "name", ["benchmark_utilitr_v0.yaml", "benchmark_dicovarg21_v0.yaml"]
-)
+@pytest.mark.parametrize("name", ["benchmark_utilitr_v0.yaml", "benchmark_dicovarg21_v0.yaml"])
 def test_real_mini_client_datasets_load(name):
     path = MINI_CLIENT / name
     if not path.exists():

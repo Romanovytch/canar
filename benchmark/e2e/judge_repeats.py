@@ -86,7 +86,10 @@ class RepeatedFaithfulness(Faithfulness):
 
     async def _single_turn_ascore(self, sample, callbacks):
         return await mean_of_draws(
-            super()._single_turn_ascore, sample, callbacks, self.repeats,
+            super()._single_turn_ascore,
+            sample,
+            callbacks,
+            self.repeats,
             report=_recorder(self.name, sample),
         )
 
@@ -104,7 +107,10 @@ class RepeatedResponseRelevancy(ResponseRelevancy):
 
     async def _single_turn_ascore(self, sample, callbacks):
         return await mean_of_draws(
-            super()._single_turn_ascore, sample, callbacks, self.repeats,
+            super()._single_turn_ascore,
+            sample,
+            callbacks,
+            self.repeats,
             report=_recorder(self.name, sample),
         )
 

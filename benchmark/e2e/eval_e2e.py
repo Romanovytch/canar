@@ -47,9 +47,9 @@ from qdrant_client import QdrantClient
 from ragas.llms import LangchainLLMWrapper
 from ragas.run_config import RunConfig
 
-HERE = Path(__file__).parent                  # benchmark/e2e/
-BENCH_DIR = HERE.parent                      # benchmark/
-REPO_ROOT = HERE.parent.parent                # the canar repo root
+HERE = Path(__file__).parent  # benchmark/e2e/
+BENCH_DIR = HERE.parent  # benchmark/
+REPO_ROOT = HERE.parent.parent  # the canar repo root
 
 # Make the canar package importable without installing it into this venv.
 # (When this becomes a feature in dev, `pip install -e .` does the same job.)
@@ -108,8 +108,8 @@ BENCH = load_config(ARGS.config)
 RETRIEVAL_K = ARGS.retrieval_k
 
 DATASET = DatasetSpec(
-    path=BENCH_DIR / BENCH.dataset,   # CSV or YAML — format detected from extension
-    limit=BENCH.limit,                # null in YAML = all questions
+    path=BENCH_DIR / BENCH.dataset,  # CSV or YAML — format detected from extension
+    limit=BENCH.limit,  # null in YAML = all questions
 )
 
 # Generation budget. qwen3.5 is a *reasoning* model: it spends a hidden token
@@ -272,10 +272,7 @@ def profile_needs_sparse(profile) -> bool:
     return profile.name in SPARSE_PROFILE_NAMES
 
 
-BENCH_AGENT_PROFILES = {
-    f"benchmark:{spec.name}": spec.name
-    for spec in BENCH.profiles
-}
+BENCH_AGENT_PROFILES = {f"benchmark:{spec.name}": spec.name for spec in BENCH.profiles}
 
 service = RetrievalService.from_config(
     cfg,
@@ -379,8 +376,9 @@ def preflight() -> None:
         if profile.parent_child is not None
         for col in profile.effective_collections()
     }
-    client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None,
-                          check_compatibility=False)
+    client = QdrantClient(
+        url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None, check_compatibility=False
+    )
     for col, need in sorted(reqs.items()):
         if not client.collection_exists(col):
             if col in parent_collections:
@@ -418,8 +416,8 @@ def preflight() -> None:
                 "profile. Re-ingest with the AgoRa parent ingestion (see SETUP.md)."
             )
         params = client.get_collection(col).config.params
-        vectors_cfg = params.vectors                 # dict (named) or single config
-        sparse_cfg = params.sparse_vectors or {}     # dict of named sparse vectors
+        vectors_cfg = params.vectors  # dict (named) or single config
+        sparse_cfg = params.sparse_vectors or {}  # dict of named sparse vectors
 
         if need["dense"]:
             # The dense vector must exist (by name on multi-vector collections) and
@@ -472,8 +470,10 @@ def build_searcher(spec):
         )
     strategy = service.strategies.get(profile.name)
     if strategy is None:
-        sys.exit(f"Profile {profile_name!r} is not available in RetrievalService strategies "
-                 f"(have: {list(service.strategies)}).")
+        sys.exit(
+            f"Profile {profile_name!r} is not available in RetrievalService strategies "
+            f"(have: {list(service.strategies)})."
+        )
 
     needs_sparse = profile_needs_sparse(profile)
     if needs_sparse and sparse_embed is None:
@@ -509,7 +509,7 @@ def make_pipeline(search):
         # retrieve (timed for the Latency metric; resource-probed when enabled)
         with probe(MEASURE_RESOURCES) as r_usage:
             t0 = time.perf_counter()
-            citations = search(question)              # list[RetrievalHit]
+            citations = search(question)  # list[RetrievalHit]
             retrieval_latency_s = time.perf_counter() - t0
 
         # build the exact prompt the app sends (CoachR system prompt + [S1].. context)
@@ -520,9 +520,7 @@ def make_pipeline(search):
         # Timed separately from retrieval, useful e.g. to compare LLM models.
         with probe(MEASURE_RESOURCES) as g_usage:
             t1 = time.perf_counter()
-            answer = "".join(
-                chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS)
-            )
+            answer = "".join(chat.stream_chat(messages, temperature=0.0, max_tokens=GEN_MAX_TOKENS))
             generation_latency_s = time.perf_counter() - t1
         # The reasoning model can spend its whole budget "thinking" and return an
         # empty answer. Flag it so a 0 score is read as "no answer", not "bad answer".
@@ -597,7 +595,7 @@ def main() -> None:
             # score means, so each CSV records what produced it.
             tag={"profile": spec.name, **PROVENANCE},
             file_label=spec.name,
-            group_dir=run_dir,            # all strategies of this run share run_dir
+            group_dir=run_dir,  # all strategies of this run share run_dir
         )
         if JUDGE_REPEATS > 1:
             # <metric>_sd and <metric>_draws per question, next to the mean.
@@ -609,18 +607,25 @@ def main() -> None:
     # self-contained artifact.
     if summaries:
         # Means of the quality/latency/resource metrics, one row per profile.
-        cols = ["hit_rate", "mrr", "recall", "precision", "ndcg",
-                "retrieval_latency_s", "generation_latency_s",
-                "retrieval_cpu_s", "peak_rss_mb",
-                "faithfulness", "answer_relevancy",
-                # only present when judge_repeats > 1: mean per-question spread
-                "faithfulness_sd", "answer_relevancy_sd"]
+        cols = [
+            "hit_rate",
+            "mrr",
+            "recall",
+            "precision",
+            "ndcg",
+            "retrieval_latency_s",
+            "generation_latency_s",
+            "retrieval_cpu_s",
+            "peak_rss_mb",
+            "faithfulness",
+            "answer_relevancy",
+            # only present when judge_repeats > 1: mean per-question spread
+            "faithfulness_sd",
+            "answer_relevancy_sd",
+        ]
         rows = []
         for name, df in summaries:
-            has_error = (
-                "pipeline_status" in df.columns
-                and (df["pipeline_status"] == "ERROR").any()
-            )
+            has_error = "pipeline_status" in df.columns and (df["pipeline_status"] == "ERROR").any()
             row = {"profile": name}
             if has_error:
                 errors = df.loc[df["pipeline_status"] == "ERROR", "pipeline_error"]
@@ -630,8 +635,13 @@ def main() -> None:
             else:
                 row["pipeline_status"] = "OK"
                 row["pipeline_error"] = ""
-                row.update({c: round(pd.to_numeric(df[c], errors="coerce").mean(), 3)
-                            for c in cols if c in df.columns})
+                row.update(
+                    {
+                        c: round(pd.to_numeric(df[c], errors="coerce").mean(), 3)
+                        for c in cols
+                        if c in df.columns
+                    }
+                )
             rows.append(row)
         comparison = pd.DataFrame(rows)
 

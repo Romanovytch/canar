@@ -61,14 +61,12 @@ def _run(dataset_path, tmp_path, label):
 
 def test_csv_dataset_runs_with_no_metadata_columns(stub_ragas, tmp_path):
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
     out_df = _run(csv, tmp_path, "csv")
 
     assert list(out_df["user_input"]) == ["q1"]
-    assert "hit_rate" in out_df.columns          # retrieval metrics computed
-    assert out_df["hit_rate"].iloc[0] == 1.0     # path matched the expected source
+    assert "hit_rate" in out_df.columns  # retrieval metrics computed
+    assert out_df["hit_rate"].iloc[0] == 1.0  # path matched the expected source
 
     # No regression: a CSV carries no metadata, so metrics.csv gains no extra cols.
     metrics = pd.read_csv(tmp_path / "csv" / "metrics.csv")
@@ -77,9 +75,7 @@ def test_csv_dataset_runs_with_no_metadata_columns(stub_ragas, tmp_path):
 
 def test_pipeline_failure_is_saved_as_error_not_zero(stub_ragas, tmp_path):
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
 
     def failing_pipeline(question):
         raise RuntimeError("boom")
@@ -133,9 +129,7 @@ questions:
     assert metrics["difficulty"].iloc[0] == "easy"
 
 
-def test_empty_expected_sources_are_nan_and_excluded_from_summary(
-    stub_ragas, tmp_path, capsys
-):
+def test_empty_expected_sources_are_nan_and_excluded_from_summary(stub_ragas, tmp_path, capsys):
     yaml_text = """
 dataset_id: d
 questions:
@@ -173,9 +167,7 @@ RESOURCE_COLS = (
 
 def test_resource_fields_become_columns(stub_ragas, tmp_path):
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
 
     def pipeline_with_resources(question):
         return PipelineOutput(
@@ -213,9 +205,7 @@ def test_resource_fields_become_columns(stub_ragas, tmp_path):
 def test_no_resource_fields_no_columns(stub_ragas, tmp_path):
     # The default _pipeline reports no latency/resource values (flag off).
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
     out_df = _run(csv, tmp_path, "nores")
     for col in RESOURCE_COLS:
         assert col not in out_df.columns
@@ -230,14 +220,10 @@ def test_an_empty_answer_is_scored_zero_and_marked(stub_ragas, tmp_path):
     so a 0 here can only come from the override.
     """
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
 
     def empty_pipeline(question):
-        return PipelineOutput(
-            answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"]
-        )
+        return PipelineOutput(answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"])
 
     out_df = run_benchmark(
         name="t",
@@ -260,9 +246,7 @@ def test_an_empty_answer_is_scored_zero_and_marked(stub_ragas, tmp_path):
 def test_a_normal_answer_keeps_its_score(stub_ragas, tmp_path):
     """The override must not touch the rows that did answer."""
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
     out_df = _run(csv, tmp_path, "normal")
 
     assert out_df["answer_status"].iloc[0] == "OK"
@@ -274,9 +258,7 @@ def test_an_empty_answer_is_not_reported_as_a_pipeline_error(stub_ragas, tmp_pat
     benchmark breaking, EMPTY is the product failing to answer. Only the second
     is a result."""
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
 
     def failing_pipeline(question):
         raise RuntimeError("boom")
@@ -294,7 +276,7 @@ def test_an_empty_answer_is_not_reported_as_a_pipeline_error(stub_ragas, tmp_pat
     )
 
     assert out_df["pipeline_status"].iloc[0] == "ERROR"
-    assert out_df["answer_status"].iloc[0] == "OK"   # never answered, never empty
+    assert out_df["answer_status"].iloc[0] == "OK"  # never answered, never empty
 
 
 def test_answer_status_reaches_the_saved_csv(stub_ragas, tmp_path):
@@ -305,14 +287,10 @@ def test_answer_status_reaches_the_saved_csv(stub_ragas, tmp_path):
     the only place anyone would look.
     """
     csv = tmp_path / "ds.csv"
-    csv.write_text(
-        "query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8"
-    )
+    csv.write_text("query,grading_notes,source_fiche\nq1,r1,some/path.qmd\n", encoding="utf-8")
 
     def empty_pipeline(question):
-        return PipelineOutput(
-            answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"]
-        )
+        return PipelineOutput(answer=ragas_bench.EMPTY_ANSWER, contexts=[], paths=["some/path.qmd"])
 
     run_benchmark(
         name="t",

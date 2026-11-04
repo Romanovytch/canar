@@ -21,65 +21,77 @@ def _rows(records):
 
 
 def test_a_question_scored_everywhere_is_used():
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
-        {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.5},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
+            {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.5},
+        ]
+    )
     assert questions_scored_in_every_run(frame, "faithfulness") == {"q1"}
 
 
 def test_a_question_missing_from_one_run_is_dropped():
     """The judge fails on different questions each time; a question it missed
     once cannot contribute to a mean that is meant to be comparable."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
-        {"run": "A", "id": "q2", "profile": "p", "faithfulness": 0.2},
-        {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.8},
-        {"run": "B", "id": "q2", "profile": "p", "faithfulness": None},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
+            {"run": "A", "id": "q2", "profile": "p", "faithfulness": 0.2},
+            {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.8},
+            {"run": "B", "id": "q2", "profile": "p", "faithfulness": None},
+        ]
+    )
     assert questions_scored_in_every_run(frame, "faithfulness") == {"q1"}
 
 
 def test_the_mean_ignores_a_question_missing_in_one_run():
     """Without this, run B would average 0.8 alone and run A 0.6, and the
     difference would read as judge noise when it is a change of denominator."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
-        {"run": "A", "id": "q2", "profile": "p", "faithfulness": 0.2},
-        {"run": "B", "id": "q1", "profile": "p", "faithfulness": 1.0},
-        {"run": "B", "id": "q2", "profile": "p", "faithfulness": None},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
+            {"run": "A", "id": "q2", "profile": "p", "faithfulness": 0.2},
+            {"run": "B", "id": "q1", "profile": "p", "faithfulness": 1.0},
+            {"run": "B", "id": "q2", "profile": "p", "faithfulness": None},
+        ]
+    )
     row = aggregate(frame, metrics=("faithfulness",)).iloc[0]
-    assert row["faithfulness_n"] == 1        # only q1 survives
-    assert row["faithfulness_mean"] == 1.0   # not (0.6 + 1.0) / 2
+    assert row["faithfulness_n"] == 1  # only q1 survives
+    assert row["faithfulness_mean"] == 1.0  # not (0.6 + 1.0) / 2
     assert row["faithfulness_sd"] == 0.0
 
 
 def test_spread_is_reported_across_runs():
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
-        {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.0},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "faithfulness": 1.0},
+            {"run": "B", "id": "q1", "profile": "p", "faithfulness": 0.0},
+        ]
+    )
     row = aggregate(frame, metrics=("faithfulness",)).iloc[0]
     assert row["faithfulness_mean"] == 0.5
-    assert row["faithfulness_sd"] == 0.5     # population sd of {1.0, 0.0}
+    assert row["faithfulness_sd"] == 0.5  # population sd of {1.0, 0.0}
 
 
 def test_a_deterministic_metric_shows_no_spread():
     """Retrieval metrics reproduce, and a zero spread is the evidence for it."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "hit_rate": 1.0},
-        {"run": "B", "id": "q1", "profile": "p", "hit_rate": 1.0},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "hit_rate": 1.0},
+            {"run": "B", "id": "q1", "profile": "p", "hit_rate": 1.0},
+        ]
+    )
     row = aggregate(frame, metrics=("hit_rate",)).iloc[0]
     assert row["hit_rate_sd"] == 0.0
 
 
 def test_profiles_are_kept_apart():
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "dense", "faithfulness": 1.0},
-        {"run": "A", "id": "q1", "profile": "hybrid", "faithfulness": 0.0},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "dense", "faithfulness": 1.0},
+            {"run": "A", "id": "q1", "profile": "hybrid", "faithfulness": 0.0},
+        ]
+    )
     table = aggregate(frame, metrics=("faithfulness",)).set_index("profile")
     assert table.loc["dense", "faithfulness_mean"] == 1.0
     assert table.loc["hybrid", "faithfulness_mean"] == 0.0
@@ -87,25 +99,41 @@ def test_profiles_are_kept_apart():
 
 def test_the_paired_table_has_a_row_per_question_and_a_column_per_profile():
     """A paired test compares profiles question by question, not in aggregate."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "dense", "faithfulness": 1.0},
-        {"run": "A", "id": "q1", "profile": "hybrid", "faithfulness": 0.5},
-        {"run": "B", "id": "q1", "profile": "dense", "faithfulness": 0.8},
-        {"run": "B", "id": "q1", "profile": "hybrid", "faithfulness": 0.5},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "dense", "faithfulness": 1.0},
+            {"run": "A", "id": "q1", "profile": "hybrid", "faithfulness": 0.5},
+            {"run": "B", "id": "q1", "profile": "dense", "faithfulness": 0.8},
+            {"run": "B", "id": "q1", "profile": "hybrid", "faithfulness": 0.5},
+        ]
+    )
     table = paired_table(frame, "faithfulness")
     assert list(table.index) == ["q1"]
     assert sorted(table.columns) == ["dense", "hybrid"]
-    assert table.loc["q1", "dense"] == 0.9   # averaged over the two runs
+    assert table.loc["q1", "dense"] == 0.9  # averaged over the two runs
 
 
 def test_judge_settings_reports_what_the_runs_were_measured_with():
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "judge_repeats": 5,
-         "judge_temperature": 0.3, "judge_model": "gemma3:12b"},
-        {"run": "B", "id": "q1", "profile": "p", "judge_repeats": 5,
-         "judge_temperature": 0.3, "judge_model": "gemma3:12b"},
-    ])
+    frame = _rows(
+        [
+            {
+                "run": "A",
+                "id": "q1",
+                "profile": "p",
+                "judge_repeats": 5,
+                "judge_temperature": 0.3,
+                "judge_model": "gemma3:12b",
+            },
+            {
+                "run": "B",
+                "id": "q1",
+                "profile": "p",
+                "judge_repeats": 5,
+                "judge_temperature": 0.3,
+                "judge_model": "gemma3:12b",
+            },
+        ]
+    )
     assert judge_settings(frame) == {
         "judge_model": ["gemma3:12b"],
         "judge_repeats": [5],
@@ -116,10 +144,12 @@ def test_judge_settings_reports_what_the_runs_were_measured_with():
 def test_judge_settings_exposes_a_mix_of_precisions():
     """A 5-draw mean and a single draw are the same quantity measured with
     different precision; combining them hides that in the spread."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "judge_repeats": 1},
-        {"run": "B", "id": "q1", "profile": "p", "judge_repeats": 5},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "judge_repeats": 1},
+            {"run": "B", "id": "q1", "profile": "p", "judge_repeats": 5},
+        ]
+    )
     assert judge_settings(frame)["judge_repeats"] == [1, 5]
 
 
@@ -131,8 +161,10 @@ def test_judge_settings_is_silent_for_runs_predating_the_columns():
 def test_judge_settings_handles_a_run_without_repetition():
     """A single-judgement run records the temperature as RAGAS's default, a
     string, while a repeated one records a number."""
-    frame = _rows([
-        {"run": "A", "id": "q1", "profile": "p", "judge_temperature": "ragas_default"},
-        {"run": "B", "id": "q1", "profile": "p", "judge_temperature": 0.3},
-    ])
+    frame = _rows(
+        [
+            {"run": "A", "id": "q1", "profile": "p", "judge_temperature": "ragas_default"},
+            {"run": "B", "id": "q1", "profile": "p", "judge_temperature": 0.3},
+        ]
+    )
     assert len(judge_settings(frame)["judge_temperature"]) == 2

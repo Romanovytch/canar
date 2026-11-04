@@ -38,24 +38,25 @@ from ragas.run_config import RunConfig
 @dataclass
 class PipelineOutput:
     """What one question yields when run through the pipeline under test."""
+
     answer: str
-    contexts: list[str]                 # retrieved chunk texts (RAGAS context)
+    contexts: list[str]  # retrieved chunk texts (RAGAS context)
     paths: list[str] = field(default_factory=list)  # source paths, for retrieval metrics
-    error: str | None = None                     # pipeline failure, if this question crashed
-    retrieval_latency_s: float | None = None     # time spent retrieving
-    generation_latency_s: float | None = None    # time spent generating the answer
+    error: str | None = None  # pipeline failure, if this question crashed
+    retrieval_latency_s: float | None = None  # time spent retrieving
+    generation_latency_s: float | None = None  # time spent generating the answer
     # Optional resource cost (only set when the resource flag is on; see
     # harness/resource_probe.py). Per phase for CPU/memory; GPU is device-level.
     # Per-strategy resource metrics only (#53): the signals that actually differ
     # between retrieval strategies. GPU is not here — it is run-level context
     # (same LLM for every strategy); see resource_probe.gpu_context().
-    retrieval_cpu_s: float | None = None   # real in-process CPU of the method
-    peak_rss_mb: float | None = None       # peak benchmark-process memory (turn)
+    retrieval_cpu_s: float | None = None  # real in-process CPU of the method
+    peak_rss_mb: float | None = None  # peak benchmark-process memory (turn)
     # Token usage (#64): prompt vs answer size — differs per strategy because the
     # retrieved context size differs.
-    input_tokens: int | None = None        # tokens in the prompt sent to the LLM
-    output_tokens: int | None = None       # tokens in the generated answer
-    total_tokens: int | None = None        # input + output
+    input_tokens: int | None = None  # tokens in the prompt sent to the LLM
+    output_tokens: int | None = None  # tokens in the generated answer
+    total_tokens: int | None = None  # input + output
 
 
 # Per-question performance measurements carried on PipelineOutput. Each becomes a
@@ -99,12 +100,13 @@ class DatasetSpec:
     `fmt`. Field mapping lives in the format loaders (harness/dataset_loaders/),
     so this no longer carries column names.
     """
+
     path: Path
-    fmt: str | None = None              # override format detection, e.g. "yaml"
+    fmt: str | None = None  # override format detection, e.g. "yaml"
     # None disables the retrieval metrics; also the label of the source column
     # written to the output.
     source_col: str | None = "source_fiche"
-    limit: int | None = None            # None = all questions; int = quick subset
+    limit: int | None = None  # None = all questions; int = quick subset
 
 
 def _write_answers_md(path, df, title, tag, score_cols, source_col) -> None:
@@ -189,13 +191,13 @@ def run_benchmark(
     """
     items = load_dataset(dataset.path, fmt=dataset.fmt)
     if dataset.limit:
-        items = items[:dataset.limit]
+        items = items[: dataset.limit]
     track_hits = dataset.source_col is not None
     print(f"{name}: {len(items)} questions\n")
 
     samples, retr_rows, all_paths = [], [], []
     pipeline_statuses, pipeline_errors, answer_statuses = [], [], []
-    metadatas = []                       # per-question extras (rich YAML datasets)
+    metadatas = []  # per-question extras (rich YAML datasets)
     perf = {perf_field: [] for perf_field in PERF_FIELDS}  # per-question latency/resource values
     metric_names = tuple(retrieval_metrics.compute([], "").keys())
     for item in items:
@@ -229,21 +231,27 @@ def run_benchmark(
                 m = retrieval_metrics.compute(out.paths, item.source_fiche, k=retrieval_k)
                 retr_rows.append(m)
                 all_paths.append("; ".join(out.paths))
-                print(f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
-                      f"recall={m['recall']:.2f} | A: {out.answer[:60]}...\n")
+                print(
+                    f"   hit={m['hit_rate']:.0f} mrr={m['mrr']:.2f} "
+                    f"recall={m['recall']:.2f} | A: {out.answer[:60]}...\n"
+                )
         else:
             status = "ERROR" if failed else "OK"
             print(f"   status={status} | A: {out.answer[:80]}...\n")
 
-        samples.append(SingleTurnSample(
-            user_input=question,
-            retrieved_contexts=out.contexts,
-            response=out.answer,
-            reference=item.reference,
-        ))
+        samples.append(
+            SingleTurnSample(
+                user_input=question,
+                retrieved_contexts=out.contexts,
+                response=out.answer,
+                reference=item.reference,
+            )
+        )
 
     if track_hits and retr_rows:
-        ok_rows = [r for r, status in zip(retr_rows, pipeline_statuses) if status == "OK"]
+        ok_rows = [
+            r for r, status in zip(retr_rows, pipeline_statuses, strict=False) if status == "OK"
+        ]
         scorable_rows = [r for r in ok_rows if pd.notna(r["hit_rate"])]
         if scorable_rows:
             hit_rate = sum(r["hit_rate"] for r in scorable_rows) / len(scorable_rows)
@@ -253,10 +261,7 @@ def run_benchmark(
             print("Retrieval — Hit Rate@k: N/A | MRR: N/A\n")
         unscorable = len(ok_rows) - len(scorable_rows)
         if unscorable:
-            print(
-                f"Retrieval — {unscorable} question(s) excluded "
-                "(no expected source)\n"
-            )
+            print(f"Retrieval — {unscorable} question(s) excluded (no expected source)\n")
         failed = len(retr_rows) - len(ok_rows)
         if failed:
             print(f"Retrieval — {failed} question(s) failed with PIPELINE_ERROR\n")
@@ -330,9 +335,7 @@ def run_benchmark(
     if error_mask.any():
         out_df[score_cols] = out_df[score_cols].astype(object)
         out_df.loc[error_mask, score_cols] = ERROR_METRIC
-    display_cols = [
-        "user_input", "pipeline_status", "pipeline_error", "answer_status"
-    ] + score_cols
+    display_cols = ["user_input", "pipeline_status", "pipeline_error", "answer_status"] + score_cols
     print(out_df[display_cols].to_string(index=False))
     numeric_scores = out_df[score_cols].apply(pd.to_numeric, errors="coerce")
     print("\nMean scores:")

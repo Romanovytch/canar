@@ -37,9 +37,7 @@ _DATASET_LEVEL_KEYS = ("dataset_id", "document_group")
 def load_yaml(path: Path) -> list[DatasetItem]:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict) or "questions" not in data:
-        raise ValueError(
-            f"YAML dataset {path} is empty or missing the top-level 'questions' list."
-        )
+        raise ValueError(f"YAML dataset {path} is empty or missing the top-level 'questions' list.")
 
     dataset_meta = {k: data[k] for k in _DATASET_LEVEL_KEYS if k in data}
 

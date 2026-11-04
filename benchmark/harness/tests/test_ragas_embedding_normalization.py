@@ -87,7 +87,7 @@ def test_a_transient_failure_is_retried_and_the_score_survives(monkeypatch):
     result = NormalizingEmbeddings(flaky).embed_query("Quelle fonction utiliser ?")
 
     assert result == [1.0]
-    assert flaky.attempts == 3          # two failures, then the answer
+    assert flaky.attempts == 3  # two failures, then the answer
 
 
 def test_a_failure_that_never_clears_is_raised(monkeypatch):

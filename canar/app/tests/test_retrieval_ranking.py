@@ -101,9 +101,7 @@ def test_reranker_rejects_blank_query_negative_top_k_and_missing_text():
         ("qwen-8b", QwenReranker, "Qwen/Qwen3-Reranker-8B"),
     ],
 )
-def test_build_reranker_supports_only_registered_models(
-    name, expected_type, expected_model
-):
+def test_build_reranker_supports_only_registered_models(name, expected_type, expected_model):
     reranker = build_reranker(name, device="cuda", max_length=256)
 
     assert isinstance(reranker, expected_type)

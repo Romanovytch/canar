@@ -22,20 +22,21 @@ import yaml
 @dataclass
 class ProfileSpec:
     """One retrieval profile to benchmark. `params` holds the strategy's knobs."""
+
     name: str
     params: dict
 
 
 @dataclass
 class BenchConfig:
-    dataset: str                       # path relative to benchmark/
+    dataset: str  # path relative to benchmark/
     agent: str = "r_helpdesk"
-    limit: int | None = None           # None = all questions
-    judge_model: str | None = None     # None = fall back to the product LLM
-    judge_repeats: int = 3             # judge each question N times (mean + spread)
-    judge_temperature: float = 0.3     # judge sampling temperature when repeating
+    limit: int | None = None  # None = all questions
+    judge_model: str | None = None  # None = fall back to the product LLM
+    judge_repeats: int = 3  # judge each question N times (mean + spread)
+    judge_temperature: float = 0.3  # judge sampling temperature when repeating
     gen_max_tokens: int = 8192
-    measure_resources: bool = False    # measure CPU/memory/GPU cost per phase
+    measure_resources: bool = False  # measure CPU/memory/GPU cost per phase
     profiles: list[ProfileSpec] = field(default_factory=list)
     # Expected environment (embed_model, collection). The caller's preflight
     # checks canar/.env against these so results are comparable across machines.

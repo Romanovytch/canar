@@ -74,7 +74,7 @@ def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dic
             "ndcg": np.nan,
         }
 
-    ranked_paths = _unique_fiches(ranked_paths)   # score documents, not chunks
+    ranked_paths = _unique_fiches(ranked_paths)  # score documents, not chunks
     k = k or len(ranked_paths)
     top_k = ranked_paths[:k]
 
@@ -86,9 +86,9 @@ def compute(ranked_paths: list[str], expected: str, k: int | None = None) -> dic
     idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(n_relevant, k) + 1))
 
     return {
-        "hit_rate": 1.0 if found else 0.0,            # Hit Rate@k
-        "mrr": 1.0 / ranks[0] if ranks else 0.0,      # MRR@k
-        "recall": found / n_relevant if n_relevant else 0.0,   # Recall@k
-        "precision": found / k if k else 0.0,         # Precision@k
-        "ndcg": dcg / idcg if idcg else 0.0,          # nDCG@k
+        "hit_rate": 1.0 if found else 0.0,  # Hit Rate@k
+        "mrr": 1.0 / ranks[0] if ranks else 0.0,  # MRR@k
+        "recall": found / n_relevant if n_relevant else 0.0,  # Recall@k
+        "precision": found / k if k else 0.0,  # Precision@k
+        "ndcg": dcg / idcg if idcg else 0.0,  # nDCG@k
     }

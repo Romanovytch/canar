@@ -20,8 +20,7 @@ def _write_csv(tmp_path, text):
 def test_maps_core_columns(tmp_path):
     csv = _write_csv(
         tmp_path,
-        "query,grading_notes,source_fiche\n"
-        '"How to import CSV?","use read_delim","fiche_a.qmd"\n',
+        'query,grading_notes,source_fiche\n"How to import CSV?","use read_delim","fiche_a.qmd"\n',
     )
     items = load_csv(csv)
     assert len(items) == 1
@@ -33,9 +32,7 @@ def test_maps_core_columns(tmp_path):
 
 
 def test_dispatched_through_load_dataset(tmp_path):
-    csv = _write_csv(
-        tmp_path, "query,grading_notes,source_fiche\nq,r,s.qmd\n"
-    )
+    csv = _write_csv(tmp_path, "query,grading_notes,source_fiche\nq,r,s.qmd\n")
     items = load_dataset(csv)  # .csv resolves to the CSV loader
     assert items[0].query == "q"
 

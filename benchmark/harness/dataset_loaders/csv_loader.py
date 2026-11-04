@@ -38,11 +38,7 @@ def load_csv(path: Path) -> list[DatasetItem]:
     has_source = SOURCE_COL in df.columns
     items: list[DatasetItem] = []
     for _, row in df.iterrows():
-        source = (
-            str(row[SOURCE_COL])
-            if has_source and pd.notna(row[SOURCE_COL])
-            else ""
-        )
+        source = str(row[SOURCE_COL]) if has_source and pd.notna(row[SOURCE_COL]) else ""
         items.append(
             DatasetItem(
                 query=str(row[QUERY_COL]),

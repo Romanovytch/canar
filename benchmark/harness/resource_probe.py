@@ -39,7 +39,8 @@ _MB = 1024 * 1024
 @dataclass
 class ResourceUsage:
     """Per-phase resource cost of the benchmark process. None when unmeasured."""
-    cpu_s: float | None = None        # CPU seconds consumed (user + system)
+
+    cpu_s: float | None = None  # CPU seconds consumed (user + system)
     peak_rss_mb: float | None = None  # peak resident memory of this process
 
 
@@ -102,10 +103,7 @@ def probe(enabled: bool):
     finally:
         sampler.stop()
         cpu_after = proc.cpu_times()
-        usage.cpu_s = (
-            (cpu_after.user - cpu_before.user)
-            + (cpu_after.system - cpu_before.system)
-        )
+        usage.cpu_s = (cpu_after.user - cpu_before.user) + (cpu_after.system - cpu_before.system)
         if sampler.peak_rss:
             usage.peak_rss_mb = sampler.peak_rss / _MB
 
@@ -163,7 +161,7 @@ def hardware_profile() -> dict:
     }
     if psutil is not None:
         info["cpu_cores"] = psutil.cpu_count(logical=True)
-        info["ram_gb"] = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+        info["ram_gb"] = round(psutil.virtual_memory().total / (1024**3), 1)
     gpu = _gpu_handle()
     if gpu is not None:
         try:
