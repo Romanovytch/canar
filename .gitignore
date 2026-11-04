@@ -8,3 +8,6 @@ venv/
 data/
 *.egg-info
 logs/
+
+# local-only benchmark brought in from a client env; not ready for tracking yet
+benchmark_mini_client/

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -36,6 +37,8 @@ class ChatbotYAMLConfig(BaseModel):
     description: str
     system_prompt: str = Field(min_length=1)
     collections: list[str] = Field(default_factory=list)
+    # Chat profile name from canar.app.profiles (retrieval profile or "prompt_only")
+    profile_name: str | None = None
     accepted_file_types: list[str] = Field(default_factory=list)
     export_extension: str | None = None
     model: str = Field(default="gpt-4o")
@@ -90,3 +93,6 @@ class ChatbotYAMLConfig(BaseModel):
 
 class ChatbotConfigFile(BaseModel):
     chatbots: list[ChatbotYAMLConfig]
+    # Profils de recherche nommés, référencés par `profile_name` ; construits et validés
+    # par canar.app.retrieval.profile_config (voir yaml_loader.load_retrieval_profile_specs).
+    retrieval_profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)

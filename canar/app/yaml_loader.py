@@ -64,6 +64,32 @@ def load_bot_tools_on_boot(
     return registry, providers_config
 
 
+def load_retrieval_profile_specs(yaml_path: str | Path) -> dict[str, dict]:
+    """
+    Lit la section optionnelle `retrieval_profiles` du fichier `chatbotconfig.yaml`.
+
+    Les profils sont construits et validés par `canar.app.retrieval.profile_config`.
+    Lève une ValueError si la section est mal formée.
+    """
+    path = Path(yaml_path)
+    if not path.exists():
+        return {}
+
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    section = data.get("retrieval_profiles") if isinstance(data, dict) else None
+    if section is None:
+        return {}
+    if not isinstance(section, dict) or not all(
+        isinstance(name, str) and isinstance(spec, dict) for name, spec in section.items()
+    ):
+        raise ValueError(
+            f"'retrieval_profiles' dans {path} doit associer un nom de profil à ses paramètres"
+        )
+    return section
+
+
 def load_chatbot_on_boot(
     yaml_path: str | Path, db, providers_config: ToolProvidersConfig | None = None
 ):

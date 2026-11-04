@@ -1,15 +1,21 @@
-def assemble_context(citations: list[dict]) -> tuple[str, list[dict]]:
+from __future__ import annotations
+
+from canar.app.retrieval.models import RetrievalHit
+
+
+def assemble_context(citations: list[RetrievalHit]) -> tuple[str, list[dict]]:
     lines = []
     srcs = []
-    for i, h in enumerate(citations, 1):
-        p = h["payload"] or {}
+    for i, hit in enumerate(citations, 1):
         label = f"S{i}"
-        url = p.get("url") or p.get("source_url")
-        section = p.get("section") or ""
-        text = p.get("text") or ""
-        lines.append(f"[{label}] {section}\n{text}\n")
+        lines.append(f"[{label}] {hit.section}\n{hit.generation_text or hit.text}\n")
         srcs.append(
-            {"label": label, "url": url, "section": section, "collection": h.get("collection")}
+            {
+                "label": label,
+                "url": hit.source_url,
+                "section": hit.section,
+                "collection": hit.collection,
+            }
         )
     return "\n---\n".join(lines), srcs
 
