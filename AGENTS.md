@@ -28,7 +28,7 @@ If those files conflict with this file, prefer this order:
 
 - Retrieval is modular and strategy-based under `canar/app/retrieval/`.
 - `canar/app/main.py` should call `RetrievalService.search(agent, query)` for retrieval; it should not embed queries or call Qdrant directly.
-- Retrieval profile selection is by agent in `canar/app/retrieval/profiles.py`.
+- Retrieval profile selection is per chatbot via `profile_name` in the chatbot YAML file. Built-in presets live in `canar/app/retrieval/profiles.py`; named profiles can be declared in the YAML `retrieval_profiles` section and are built by `canar/app/retrieval/profile_config.py` (keep YAML/pydantic out of the retrieval package).
 - The default implemented profile/strategy is `simple_vector`, mapped to `r_helpdesk`.
 - Optional sparse retrieval lives in the separate `simple_sparse` profile/strategy and is not mapped to an agent by default.
 - `sas_to_r` has no retrieval profile.

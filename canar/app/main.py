@@ -19,13 +19,14 @@ from canar.app.profiles import (
     build_chat_profiles,
     resolve_chatbot_profiles,
 )
+from canar.app.retrieval.profile_config import build_configured_profiles
 from canar.app.retrieval.profiles import build_retrieval_profiles
 from canar.app.retrieval.service import RetrievalService
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
 from canar.app.utils.llm_utils import assemble_context, build_universal_messages
-from canar.app.yaml_loader import load_chatbot_on_boot
+from canar.app.yaml_loader import load_chatbot_on_boot, load_retrieval_profile_specs
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
@@ -69,8 +70,12 @@ retrieval_profiles = build_retrieval_profiles(
     dense_vector_name=cfg.qdrant_dense_vector_name,
     sparse_vector_name=cfg.qdrant_sparse_vector_name,
 )
-chat_profiles = build_chat_profiles(retrieval_profiles)
 try:
+    retrieval_profiles |= build_configured_profiles(
+        load_retrieval_profile_specs(CHATBOT_CONFIG_PATH),
+        retrieval_profiles,
+    )
+    chat_profiles = build_chat_profiles(retrieval_profiles)
     chatbot_profiles = resolve_chatbot_profiles(chatbot_list, chat_profiles)
 except ValueError as exc:
     st.error(str(exc))

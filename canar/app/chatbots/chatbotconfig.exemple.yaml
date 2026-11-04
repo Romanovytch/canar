@@ -7,6 +7,44 @@
 # de données PostgreSQL et mettre à jour les assistants dans l'interface graphique.
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# Profils de recherche (optionnel)
+# ------------------------------------------------------------------------------
+# Un chatbot choisit sa stratégie de recherche avec `profile_name`, qui peut être :
+#   - un profil prédéfini de canar/app/retrieval/profiles.py : simple_vector,
+#     simple_sparse, hybrid, hybrid_summary, hybrid_rerank_bge, hybrid_parent_child...
+#   - "prompt_only" : aucune recherche documentaire ;
+#   - un profil défini ci-dessous.
+#
+# Chaque profil défini ici :
+#   - part d'un profil existant avec `extends` (prédéfini ou défini dans ce fichier),
+#     ou se décrit entièrement avec `strategy` (simple_vector | simple_sparse | hybrid)
+#     et `collections` ;
+#   - remplace les valeurs racines : collections, fetch_top_k, min_score,
+#     output_top_k, fallback_top_k, source_filter ;
+#   - fusionne clé par clé les blocs : dense, sparse, fusion, rerank, parent_child,
+#     summary. Un bloc à `null` est supprimé (ex. `rerank: null`).
+# Les profils sparse et hybrid nécessitent FASTEMBED_SPARSE_MODEL.
+# Le nom d'un profil prédéfini ou "prompt_only" ne peut pas être réutilisé.
+
+retrieval_profiles:
+  # Recherche dense sur des collections choisies, plus permissive que simple_vector
+  utilitr_dense_large:
+    extends: simple_vector
+    collections: ["utilitr_v1"]
+    fetch_top_k: 20
+    output_top_k: 8
+    dense:
+      min_score: 0.6
+
+  # Hybride rerankée, avec plus de poids sur la recherche dense
+  utilitr_hybrid_rerank:
+    extends: hybrid_rerank_bge
+    fusion:
+      weights: {dense: 2.0, sparse: 1.0}
+    rerank:
+      output_top_k: 6
+
 chatbots:
   # ----------------------------------------------------------------------------
   # Premier assistant : L'aide et accompagnement pédagogique sur R (ex-r_helpdesk)

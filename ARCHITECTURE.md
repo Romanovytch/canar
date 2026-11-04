@@ -77,7 +77,7 @@ The old `canar/app/api/retrieval.py::search_qdrant` function remains as a compat
 
 ## Retrieval profiles
 
-Profiles are configured in Python, not YAML/TOML/env files. The active profile is selected by agent.
+Built-in profiles (presets) are defined in Python in `canar/app/retrieval/profiles.py`. Additional named profiles can be declared in the `retrieval_profiles` section of the chatbot YAML file (`canar/app/chatbots/chatbotconfig.yaml`): each one extends a preset or another YAML profile with `extends`, or defines `strategy` and `collections` itself. `canar/app/retrieval/profile_config.py` turns these plain mappings into `RetrievalProfile` objects (root values replace, parameter blocks merge key by key, `null` removes a block) and rejects unknown keys, unknown or cyclic `extends` and preset-name clashes. Each chatbot selects its profile with `profile_name` (a preset, a YAML profile or `prompt_only`).
 
 Current mapping:
 
