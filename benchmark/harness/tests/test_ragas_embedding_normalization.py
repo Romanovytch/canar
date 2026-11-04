@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 
-import embedding_normalization
 import pytest
-from embedding_normalization import NormalizingEmbeddings
+
+pytest.importorskip("langchain_core")
+
+import embedding_normalization  # noqa: E402
+from embedding_normalization import NormalizingEmbeddings  # noqa: E402
 
 
 # APOSTROPHE NORMALIZATION WORKAROUND test delegate. This file can be removed

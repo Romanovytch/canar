@@ -7,7 +7,11 @@ retries cannot recover it — the text has to change before it is sent.
 
 from __future__ import annotations
 
-from embedding_normalization import flatten_markdown_tables, prepare_for_embedding
+import pytest
+
+pytest.importorskip("langchain_core")
+
+from embedding_normalization import flatten_markdown_tables, prepare_for_embedding  # noqa: E402
 
 TABLE = "| Format | Seuil |\n|---|---|\n| CSV | 5 Go |"
 

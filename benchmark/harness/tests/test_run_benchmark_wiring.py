@@ -4,8 +4,11 @@ stubbed so the test needs no judge LLM."""
 
 import pandas as pd
 import pytest
-import ragas_bench
-from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark
+
+pytest.importorskip("ragas")
+
+import ragas_bench  # noqa: E402
+from ragas_bench import DatasetSpec, PipelineOutput, run_benchmark  # noqa: E402
 
 
 class _FakeResult:

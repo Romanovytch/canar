@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytest.importorskip("ragas")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e"))
 
 import judge_repeats  # noqa: E402
