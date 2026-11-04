@@ -36,6 +36,8 @@ class ChatbotYAMLConfig(BaseModel):
     description: str
     system_prompt: str = Field(min_length=1)
     collections: list[str] = Field(default_factory=list)
+    # Chat profile name from canar.app.profiles (retrieval profile or "prompt_only")
+    profile_name: str | None = None
     accepted_file_types: list[str] = Field(default_factory=list)
     export_extension: str | None = None
     model: str = Field(default="gpt-4o")

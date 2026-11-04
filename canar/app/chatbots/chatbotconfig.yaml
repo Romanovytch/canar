@@ -1,5 +1,6 @@
 chatbots:
   - id: "r_helpdesk"
+    profile_name: "simple_vector"
     name: "Assistant R modifié2"
     description: "Formateur R très pédagogue pour les statisticiens."
     collections:
@@ -29,6 +30,7 @@ chatbots:
 
     
   - id: "sas_to_r"
+    profile_name: "prompt_only"
     name: "Traduction SAS → R"
     description: "Traducteur expert de code SAS vers R."
     collections: [] 
@@ -60,6 +62,7 @@ chatbots:
 
       
   - id: super_agent_eco
+    profile_name: "prompt_only"
     name: "Agent Économique"
     description: "Agent économique pour poser des question datagouv"
     collections: [] 

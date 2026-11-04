@@ -1,55 +1,56 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import mimetypes
 import time
+from pathlib import Path
 
 import streamlit as st
 from sqlmodel import Session, select
 
-# from canar.app.agents import r_helpdesk, sas_to_r
 from canar.app.api.embed_client import EmbedClient
 from canar.app.api.llm_client import ChatClient
-from canar.app.api.retrieval import search_qdrant
-from canar.app.bot_tools.errors import ToolError
-from canar.app.bot_tools.openai_adapter import tools_to_openai_schemas
-from canar.app.bot_tools.registry import ToolRegistry
-from canar.app.bot_tools.tool_config import ToolProvidersConfig
+
+# from canar.app.bot_tools.registry import ToolRegistry
 from canar.app.chatbots.chatbot_config import ChatbotConfig
 from canar.app.config import AppConfig
+from canar.app.profiles import (
+    build_agent_profile_mapping,
+    build_chat_profiles,
+    resolve_chatbot_profiles,
+)
+from canar.app.retrieval.profiles import build_retrieval_profiles
+from canar.app.retrieval.service import RetrievalService
 from canar.app.state import DB
 from canar.app.ui.chat import render_messages, stream_answer
 from canar.app.ui.sidebar import sidebar
 from canar.app.utils.llm_utils import assemble_context, build_universal_messages
-from canar.app.yaml_loader import load_bot_tools_on_boot, load_chatbot_on_boot
+from canar.app.yaml_loader import load_chatbot_on_boot
 
 st.set_page_config(page_title="CanaR", page_icon="🦆", layout="wide")
 
 cfg = AppConfig()
 cfg.validate()
 db = DB(cfg.db_path)
+CHATBOT_CONFIG_PATH = Path(__file__).resolve().parent / "chatbots" / "chatbotconfig.yaml"
 
 
 @st.cache_resource()
-def init_tool_registry() -> tuple[ToolRegistry, ToolProvidersConfig]:
-    yaml_path = "canar/app/bot_tools/tools_config.yaml"
-    return load_bot_tools_on_boot(yaml_path)
-
-
-tool_registry, providers_config = init_tool_registry()
-
-
-@st.cache_resource()
-def init_app_agent_data(_db: DB, _providers_config: ToolProvidersConfig = None):
-
+def init_app_agent_data(_db: DB) -> None:
     mimetypes.add_type("text/x-r-source", ".r")
     mimetypes.add_type("application/x-sas", ".sas")
+    load_chatbot_on_boot(CHATBOT_CONFIG_PATH, _db)
 
-    load_chatbot_on_boot(cfg.chatbot_config_path, _db, _providers_config)
+
+# @st.cache_resource()
+# def init_tool_registry() -> ToolRegistry:
+#     yaml_path = "canar/app/bot_tools/tools_config.yaml"
+#     return load_bot_tools_on_boot(yaml_path)
 
 
-init_app_agent_data(db, providers_config)
+# tool_registry = init_tool_registry()
+
+init_app_agent_data(db)
 
 
 @st.cache_data(ttl=3600)
@@ -59,6 +60,25 @@ def fetch_chatbot_list(_engine) -> list[ChatbotConfig]:
 
 
 chatbot_list = fetch_chatbot_list(db.engine)
+if not chatbot_list:
+    st.error("Aucun chatbot valide n'est configuré.")
+    st.stop()
+
+retrieval_profiles = build_retrieval_profiles(
+    tuple(cfg.qdrant_collections),
+    dense_vector_name=cfg.qdrant_dense_vector_name,
+    sparse_vector_name=cfg.qdrant_sparse_vector_name,
+)
+chat_profiles = build_chat_profiles(retrieval_profiles)
+try:
+    chatbot_profiles = resolve_chatbot_profiles(chatbot_list, chat_profiles)
+except ValueError as exc:
+    st.error(str(exc))
+    st.stop()
+agent_profiles = build_agent_profile_mapping(chatbot_profiles)
+
+CHATBOTS_BY_ID = {bot.id: bot for bot in chatbot_list}
+DEFAULT_BOT_ID = chatbot_list[0].id
 
 # ---------- Auth (local) ----------
 if "user_id" not in st.session_state:
@@ -80,10 +100,9 @@ def show_auth():
                 st.session_state["user_id"] = uid
                 # Create a starter conversation if none
                 if not db.list_conversations(uid):
-                    default_bot_id = chatbot_list[0].id if len(chatbot_list) > 0 else "no_bot"
-                    cid = db.create_conversation(uid, "Nouvelle conversation modif", default_bot_id)
+                    cid = db.create_conversation(uid, "Nouvelle conversation modif", DEFAULT_BOT_ID)
                     st.session_state["conv_id"] = cid
-                    st.session_state["agent"] = default_bot_id
+                    st.session_state["agent"] = DEFAULT_BOT_ID
 
                 st.rerun()
 
@@ -111,23 +130,22 @@ if "conv_id" not in st.session_state:
         st.session_state["conv_id"] = convs[0].id
         st.session_state["agent"] = convs[0].agent
     else:
-        default_bot_id = chatbot_list[0].id if len(chatbot_list) > 0 else "no_bot"
-        cid = db.create_conversation(USER_ID, "Nouvelle conversation", default_bot_id)
+        cid = db.create_conversation(USER_ID, "Nouvelle conversation", DEFAULT_BOT_ID)
         st.session_state["conv_id"] = cid
-        st.session_state["agent"] = default_bot_id
+        st.session_state["agent"] = DEFAULT_BOT_ID
 
 conv_id: int = st.session_state["conv_id"]
-agent: str = st.session_state.get(
-    "agent", (chatbot_list[0].id if len(chatbot_list) > 0 else "no_bot")
-)
+agent: str = st.session_state.get("agent", DEFAULT_BOT_ID)
+if agent not in CHATBOTS_BY_ID:
+    agent = DEFAULT_BOT_ID
+    st.session_state["agent"] = agent
+current_bot = CHATBOTS_BY_ID[agent]
+current_profile = chatbot_profiles[agent]
+generation_params = current_profile.generation
 
 # Sidebar (conversations + create/rename/delete)
 
 sidebar(db, USER_ID, conv_id, [bot.id for bot in chatbot_list], agent, chatbot_list)
-
-
-# Defining the current bot cause it is needed by the chat client
-current_bot = next((bot for bot in chatbot_list if bot.id == st.session_state["agent"]), None)
 
 # ---------- Header with current conversation name + agent selector ----------
 AGENT_LABELS = {bot.id: bot.name for bot in chatbot_list}
@@ -181,7 +199,7 @@ with ctrl_right:
         "Max tokens réponse",
         min_value=256,
         max_value=8192,
-        value=current_bot.max_context_tokens if current_bot else 2048,
+        value=generation_params.max_tokens,
         step=256,
         help="Augmente si tu colles de longs extraits de code.",
     )
@@ -189,7 +207,7 @@ with ctrl_right:
         "Température",
         min_value=0.0,
         max_value=1.0,
-        value=0.2,
+        value=generation_params.temperature,
         step=0.05,
         help="Plus élevé = plus créatif.",
     )
@@ -245,58 +263,87 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # LLM and Embedding clients
-chat = ChatClient(cfg.llm_base, cfg.llm_key, current_bot.model)
+chat = ChatClient(
+    cfg.llm_base,
+    cfg.llm_key,
+    generation_params.model or cfg.llm_model,
+    cfg.llm_thinking,
+    cfg.llm_provider_name,
+)
 embed = EmbedClient(cfg.embed_base, cfg.embed_model, cfg.embed_key)
+retrieval = RetrievalService.from_config(
+    cfg,
+    embed,
+    profiles=retrieval_profiles,
+    agent_profiles=agent_profiles,
+)
 
 # Show messages
 render_messages(db, USER_ID, conv_id)
 
 # --- Input area + turn handling ---
-uploaded_file_content = None
-
-if current_bot and current_bot.accepted_file_types:
+sas_code_uploaded = None
+if current_bot.accepted_file_types:
     uploaded = st.file_uploader(
         "Uploader un fichier (optionnel)", type=current_bot.accepted_file_types
     )
     if uploaded is not None:
-        uploaded_file_content = uploaded.read().decode("utf-8", errors="ignore")
+        sas_code_uploaded = uploaded.read().decode("utf-8", errors="ignore")
 
+user_input = st.chat_input("Pose ta question (ou colle ton code)…")
+if user_input:
+    # 1) show the user message immediately in the chat
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-async def process_agent_turn():
-    print("Initialisation des connexions réseau...")
-    await tool_registry.initialize_all()
+    # 2) persist it
+    db.add_message(USER_ID, conv_id, "user", user_input)
 
-    try:
-        allowed_tools = current_bot.allowed_tools
-        bot_tools = await tool_registry.list_tools_for_chatbot(allowed_tools)
-        allowed_tools_schemas = tools_to_openai_schemas(bot_tools)
+    # Universal agent logic
+    uploaded_file_cont = None
+    if current_bot.accepted_file_types and sas_code_uploaded:
+        uploaded_file_cont = sas_code_uploaded
 
-        if not allowed_tools_schemas:
-            gen = chat.stream_chat(messages, temperature=temperature, max_tokens=max_tokens)
-            stream_answer(db, USER_ID, conv_id, gen)
-            return
+    citations = retrieval.search(current_bot.id, user_input)
+    context_text, src_list = assemble_context(citations)
 
+    messages = build_universal_messages(
+        system_prompt=current_bot.system_prompt,
+        user_question=user_input,
+        file_content=uploaded_file_cont,
+        rag_context=context_text,
+    )
+
+    allowed_tools = current_bot.allowed_tools
+
+    # allowed_tools_schemas = asyncio.run(tool_registry.get_all_tools_schemas(allowed_tools))
+
+    if not allowed_tools or len(allowed_tools) == 0:
+        gen = chat.stream_chat(
+            messages,
+            temperature=temperature,
+            top_p=generation_params.top_p,
+            max_tokens=max_tokens,
+        )
+        answer = stream_answer(db, USER_ID, conv_id, gen)
+    else:
         is_final_answer = False
         final_text = ""
 
-        max_iterations = (
-            current_bot.tool_policy.max_iterations
-            if hasattr(current_bot, "tool_policy") and current_bot.tool_policy
-            else 4
-        )
+        MAX_ITERATIONS = 5
         iteration_count = 0
+
         with st.status("L'agent analyse la demande...", expanded=True) as status:
-            while not is_final_answer and iteration_count < max_iterations:
+            while not is_final_answer and iteration_count < MAX_ITERATIONS:
                 iteration_count += 1
-                print(f"Itération {iteration_count}")
 
                 response = chat.sync_chat(
                     messages,
                     temperature=temperature,
+                    top_p=generation_params.top_p,
                     max_tokens=max_tokens,
-                    allowed_tools_schemas=allowed_tools_schemas,
+                    # allowed_tools_schemas=allowed_tools_schemas,
                 )
 
                 llm_msg = response.choices[0].message
@@ -305,40 +352,21 @@ async def process_agent_turn():
                     messages.append(llm_msg.model_dump(exclude_none=True))
                     for tool_call in llm_msg.tool_calls:
                         tool_name = tool_call.function.name
-                        st.write(f"Exécution de l'outil '{tool_name}'...")
-
+                        st.write(f"Appel à l'outil {tool_name}...")
                         try:
-                            tool_args = (
-                                json.loads(tool_call.function.arguments)
-                                if tool_call.function.arguments
-                                else {}
-                            )
-                            result = await tool_registry.execute_tool_for_chatbot(
-                                tool_name=tool_name,
-                                arguments=tool_args,
-                                allowed_tools=allowed_tools,
-                                call_id=tool_call.id,
-                            )
-                            content_str = result.content
-                            if result.is_error:
-                                st.warning(f"L'outil '{tool_name}' a renvoyé un avertissement.")
-                            else:
-                                st.write("Données récupérées avec succès")
-
-                        except ToolError as e:
-                            content_str = (
-                                f"Erreur lors de l'exécution de l'outil '{tool_name}' : {e}"
-                            )
-                            st.error(f"Échec de l'outil '{tool_name}' : {e}")
+                            tool_args = json.loads(tool_call.function.arguments)
+                            result = None
+                            # asyncio.run(tool_registry.execute_tool(tool_name, tool_args))
+                            st.write("Données récupérées avec succès")
                         except Exception as e:
-                            content_str = (
-                                f"Erreur inattendue lors de l'exécution de l'outil "
-                                f"'{tool_name}' : {e}"
-                            )
-                            st.error(f"Erreur inattendue : {e}")
-
+                            result = f"Erreur lors de l'exécution de l'outil {tool_name} : {str(e)}"
+                            st.write(f"Erreur : {result}")
                         messages.append(
-                            {"role": "tool", "tool_call_id": tool_call.id, "content": content_str}
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": str(result),
+                            }
                         )
 
                 else:
@@ -353,7 +381,9 @@ async def process_agent_turn():
                     "Voici un résumé de ce que j'ai trouvé jusque-là..."
                 )
                 status.update(
-                    label="Recherche interrompue (Limite atteinte)", state="error", expanded=False
+                    label="Recherche interrompue (Limite atteinte)",
+                    state="error",
+                    expanded=False,
                 )
 
         def fake_stream_generator(text):
@@ -362,52 +392,7 @@ async def process_agent_turn():
                 time.sleep(0.01)
 
         gen = fake_stream_generator(final_text)
-        stream_answer(db, USER_ID, conv_id, gen)
-    finally:
-        print("Fermeture des connexions réseau...")
-        await tool_registry.cleanup_all()
-
-
-user_input = st.chat_input("Pose ta question (ou colle ton code)…")
-if user_input:
-    # 1) show the user message immediately in the chat
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    # 2) persist it
-    db.add_message(USER_ID, conv_id, "user", user_input)
-
-    # Universal agent logic
-    uploaded_file_cont = None
-    if (
-        current_bot.accepted_file_types
-        and len(current_bot.accepted_file_types) > 0
-        and uploaded_file_content
-    ):
-        uploaded_file_cont = uploaded_file_content
-
-    context_text = None
-    src_list = []
-    if current_bot.collections and len(current_bot.collections) > 0:
-        qvec = embed.embed_query(user_input)
-        citations = search_qdrant(
-            cfg.qdrant_url,
-            cfg.qdrant_api_key,
-            list(current_bot.collections),
-            qvec,
-            top_k_per_collection=5,
-            source_filter="utilitr",
-        )
-        context_text, src_list = assemble_context(citations)
-
-    messages = build_universal_messages(
-        system_prompt=current_bot.system_prompt,
-        user_question=user_input,
-        file_content=uploaded_file_cont,
-        rag_context=context_text,
-    )
-
-    asyncio.run(process_agent_turn())
+        answer = stream_answer(db, USER_ID, conv_id, gen)
 
     # Citations panel
     if len(src_list):

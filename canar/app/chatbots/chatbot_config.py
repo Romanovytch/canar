@@ -12,6 +12,8 @@ class ChatbotConfig(SQLModel, table=True):
     description: str
     system_prompt: str = Field(min_length=1)
     collections: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # Chat profile name from canar.app.profiles (retrieval profile or "prompt_only")
+    profile_name: str | None = Field(default=None)
     accepted_file_types: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     export_extension: str | None = Field(default=None)
     model: str = Field(default="gpt-4o")
@@ -50,6 +52,7 @@ class ChatbotConfig(SQLModel, table=True):
             existing_bot.description = self.description
             existing_bot.system_prompt = self.system_prompt
             existing_bot.collections = self.collections
+            existing_bot.profile_name = self.profile_name
             existing_bot.model = self.model
             existing_bot.top_k = self.top_k
             existing_bot.score_threshold = self.score_threshold

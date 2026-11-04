@@ -12,6 +12,7 @@ chatbots:
   # Premier assistant : L'aide et accompagnement pédagogique sur R (ex-r_helpdesk)
   # ----------------------------------------------------------------------------
   - id: "r_helpdesk"
+    profile_name: "simple_vector"
     name: "Assistant R"
     description: "CoachR, un formateur R très pédagogue pour un public venant de SAS."
     model: "gpt-4o"                  # Modèle par défaut à utiliser pour la génération
@@ -45,6 +46,7 @@ chatbots:
   # Deuxième assistant : Traduction automatique de programmes SAS (ex-sas_to_r)
   # ----------------------------------------------------------------------------
   - id: "sas_to_r"
+    profile_name: "prompt_only"
     name: "Traduction SAS → R"
     description: "TradSAS2R, un assistant expert en migration de code SAS vers R."
     model: "gpt-4o"

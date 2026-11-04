@@ -9,6 +9,8 @@ from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 
 # ---------- Models ----------
 class User(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
+
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     password_hash: str
@@ -16,6 +18,8 @@ class User(SQLModel, table=True):
 
 
 class Conversation(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
+
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(index=True, foreign_key="user.id")
     title: str
@@ -25,6 +29,8 @@ class Conversation(SQLModel, table=True):
 
 
 class Message(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
+
     id: int | None = Field(default=None, primary_key=True)
     conversation_id: int = Field(index=True, foreign_key="conversation.id")
     role: str  # "user" | "assistant" | "system"

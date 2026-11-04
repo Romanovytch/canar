@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from canar.app.retrieval.models import (
+    DenseRetrievalParams,
+    RetrievalHit,
+    RetrievalProfile,
+    RetrievalQuery,
+)
+from canar.app.retrieval.strategies.simple_vector import SimpleVectorStrategy
+
+
+class FakeDenseAdapter:
+    def __init__(self, hits_by_collection: dict[str, list[RetrievalHit]]):
+        self.hits_by_collection = hits_by_collection
+        self.calls = []
+
+    def search_dense(
+        self,
+        collection: str,
+        query_vector: list[float],
+        top_k: int,
+        source_filter: str | None = "utilitr",
+        vector_name: str | None = None,
+    ) -> list[RetrievalHit]:
+        self.calls.append((collection, query_vector, top_k, source_filter, vector_name))
+        return self.hits_by_collection.get(collection, [])
+
+
+def test_simple_vector_normalizes_sorts_and_prunes_hits():
+    profile = RetrievalProfile(
+        name="simple_vector",
+        strategy="simple_vector",
+        collections=("docs_a", "docs_b"),
+        fetch_top_k=5,
+        min_score=0.35,
+        dense=DenseRetrievalParams(),
+        source_filter="utilitr",
+        fallback_top_k=3,
+    )
+    adapter = FakeDenseAdapter(
+        {
+            "docs_a": [
+                RetrievalHit(text="low", collection="docs_a", score=0.2, score_norm=0),
+                RetrievalHit(text="high", collection="docs_a", score=0.6, score_norm=0),
+            ],
+            "docs_b": [
+                RetrievalHit(text="flat 1", collection="docs_b", score=10.0, score_norm=0),
+                RetrievalHit(text="flat 2", collection="docs_b", score=10.0, score_norm=0),
+            ],
+        }
+    )
+
+    hits = SimpleVectorStrategy(profile, adapter).search(
+        RetrievalQuery(text="question", profile_name="simple_vector", dense_vector=[0.1, 0.2])
+    )
+
+    assert [hit.text for hit in hits] == ["high"]
+    assert hits[0].score_norm == 1.0
+    assert adapter.calls == [
+        ("docs_a", [0.1, 0.2], 5, "utilitr", None),
+        ("docs_b", [0.1, 0.2], 5, "utilitr", None),
+    ]
+
+
+def test_simple_vector_dense_params_override_profile_fetch_and_threshold():
+    profile = RetrievalProfile(
+        name="hybrid_dense",
+        strategy="simple_vector",
+        collections=("docs",),
+        fetch_top_k=10,
+        min_score=0.75,
+        output_top_k=2,
+        dense=DenseRetrievalParams(fetch_top_k=4, min_score=0.25),
+    )
+    adapter = FakeDenseAdapter(
+        {
+            "docs": [
+                RetrievalHit(text="top", collection="docs", score=10.0, score_norm=0),
+                RetrievalHit(text="second", collection="docs", score=8.0, score_norm=0),
+                RetrievalHit(text="third", collection="docs", score=5.0, score_norm=0),
+                RetrievalHit(text="low", collection="docs", score=1.0, score_norm=0),
+            ]
+        }
+    )
+
+    hits = SimpleVectorStrategy(profile, adapter).search(
+        RetrievalQuery(text="question", profile_name="hybrid_dense", dense_vector=[0.1])
+    )
+
+    assert [hit.text for hit in hits] == ["top", "second"]
+    assert adapter.calls == [("docs", [0.1], 4, None, None)]
+
+
+def test_simple_vector_keeps_top_fallback_when_all_hits_are_below_threshold():
+    profile = RetrievalProfile(
+        name="simple_vector",
+        strategy="simple_vector",
+        collections=("docs",),
+        fetch_top_k=5,
+        min_score=0.75,
+        dense=DenseRetrievalParams(),
+        source_filter="utilitr",
+        fallback_top_k=3,
+    )
+    adapter = FakeDenseAdapter(
+        {
+            "docs": [
+                RetrievalHit(text="one", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="two", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="three", collection="docs", score=1.0, score_norm=0),
+                RetrievalHit(text="four", collection="docs", score=1.0, score_norm=0),
+            ]
+        }
+    )
+
+    hits = SimpleVectorStrategy(profile, adapter).search(
+        RetrievalQuery(text="question", profile_name="simple_vector", dense_vector=[0.1])
+    )
+
+    assert [hit.text for hit in hits] == ["one", "two", "three"]
+
+
+def test_simple_vector_requires_dense_vector():
+    profile = RetrievalProfile(
+        name="simple_vector",
+        strategy="simple_vector",
+        collections=("docs",),
+        dense=DenseRetrievalParams(),
+    )
+    strategy = SimpleVectorStrategy(profile, FakeDenseAdapter({}))
+
+    try:
+        strategy.search(RetrievalQuery(text="question", profile_name="simple_vector"))
+    except ValueError as exc:
+        assert "dense query vector" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")

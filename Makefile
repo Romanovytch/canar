@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help up down reset logs venv install run test lint format format-check ci
+.PHONY: help up down reset logs venv install install-torch run test lint format format-check ci
 
 help:
 	@echo "Targets:"
@@ -8,8 +8,10 @@ help:
 	@echo "  make down          - Stop containers"
 	@echo "  make reset         - Stop + remove volumes"
 	@echo "  make logs          - Follow docker logs"
-	@echo "  make venv          - Create venv (.venv)"
+	@echo "  make venv          - Create venv (.venv_canar)"
 	@echo "  make install       - Install CanaR (editable) + dev tools"
+	@echo "  make install-torch - Install CUDA 12.8 PyTorch wheel"
+	@echo "  make install-rerank - Install optional reranking dependencies"
 	@echo "  make run           - Run CanaR (entrypoint or Streamlit fallback)"
 	@echo "  make test          - Run tests (pytest)"
 	@echo "  make lint          - Run ruff lint (check)"
@@ -34,6 +36,12 @@ venv:
 
 install:
 	. .venv/bin/activate && pip install -U pip && pip install -e ".[dev]"
+
+install-torch:
+	. .venv/bin/activate &&pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 "torch>=2.6,<3.0"
+
+install-rerank:
+	. .venv/bin/activate && pip install -e ".[rerank]"
 
 run:
 	. .venv/bin/activate && (canar || streamlit run canar/app/main.py --server.headless true --server.port 8501)
